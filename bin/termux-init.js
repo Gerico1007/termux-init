@@ -120,6 +120,10 @@ function ensureBashrcStub() {
 }
 
 // HTTP(S) GET/POST without external deps. Honors both http: and https: URLs.
+// Per-attempt socket timeout — without this, a registry process that's up but
+// hung (TCP handshake fine, no response body) would never raise an error and
+// the exponential-backoff retry chain in withRetry() would stall forever.
+const HTTP_TIMEOUT_MS = 8000;
 function httpRequest(method, url, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -147,6 +151,9 @@ function httpRequest(method, url, body) {
       let chunks = '';
       res.on('data', (c) => chunks += c);
       res.on('end', () => resolve({ status: res.statusCode, body: chunks }));
+    });
+    req.setTimeout(HTTP_TIMEOUT_MS, () => {
+      req.destroy(new Error(`request timeout after ${HTTP_TIMEOUT_MS}ms`));
     });
     req.on('error', reject);
     if (payload) req.write(payload);
