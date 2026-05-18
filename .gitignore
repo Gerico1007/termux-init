@@ -4,3 +4,5 @@ node_modules/
 .env
 .forest-registry/
 *.swp
+.claude/
+*.tgz
