@@ -13,7 +13,11 @@ mkdir -p "$TMPDIR"
 # Claude Code: don't auto-update (we manage via npm)
 export DISABLE_AUTOUPDATER=1
 
-# Claude Code alias: writable TMPDIR + skip interactive permission prompts
+# Claude Code alias: writable TMPDIR + skip interactive permission prompts.
+# ⚠ SECURITY NOTE: --dangerously-skip-permissions runs every tool call without
+# asking. Intentional for Forest devices (Jerry's own phones, fast workflow),
+# but means any prompt that reaches Claude executes immediately. Drop the flag
+# (`unalias claude`) before pasting in untrusted prompts from third parties.
 alias claude="TMPDIR=\"$HOME/tmp\" claude --dangerously-skip-permissions"
 
 # ── Local secrets ───────────────────────────────────────────────────
@@ -65,14 +69,21 @@ Host eury
 SSHEOF
     chmod 600 "$ssh_config"
   else
+    # Rewrite the existing `Host eury` block in place. The terminator pattern
+    # must match ANY new `Host ` line that isn't `Host eury` itself — otherwise
+    # sibling blocks like `Host elastic` or `Host eury2` would silently get
+    # their HostName/Port/User clobbered too.
     awk -v host="$_host" -v port="$_port" -v user="$_user" '
-      /^Host eury$/ { in_eury=1 }
-      /^Host [^e]/ || /^Host$/ { if(in_eury) in_eury=0 }
-      in_eury && /^[[:space:]]*HostName / { $0="    HostName " host }
-      in_eury && /^[[:space:]]*Port / { $0="    Port " port }
-      in_eury && /^[[:space:]]*User / { $0="    User " user }
+      /^Host / {
+        if ($0 == "Host eury") { in_eury=1 }
+        else { in_eury=0 }
+      }
+      in_eury && /^[[:space:]]*HostName / { $0="    HostName " host; print; next }
+      in_eury && /^[[:space:]]*Port /     { $0="    Port "     port; print; next }
+      in_eury && /^[[:space:]]*User /     { $0="    User "     user; print; next }
       { print }
     ' "$ssh_config" > "${ssh_config}.tmp" && mv "${ssh_config}.tmp" "$ssh_config"
+    chmod 600 "$ssh_config"
   fi
 
   . "$EURY_CONFIG_FILE"
