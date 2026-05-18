@@ -177,8 +177,10 @@ function cmdSeed() {
         `'[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C ${node}@termux-init >/dev/null'`,
         { stdio: 'pipe' }
       );
+      // Quote the remote command so ~/ doesn't get expanded by Eury's local shell
+      // before being sent over the wire (would resolve to /home/gmusic/.ssh/...).
       const pub = execSync(
-        `ssh -p 8022 -o ConnectTimeout=8 -o BatchMode=yes ${node}.ferret-harmonic.ts.net cat ~/.ssh/id_ed25519.pub`,
+        `ssh -p 8022 -o ConnectTimeout=8 -o BatchMode=yes ${node}.ferret-harmonic.ts.net 'cat "$HOME/.ssh/id_ed25519.pub"'`,
         { encoding: 'utf8' }
       ).trim();
       const ip = execSync(`tailscale ip -4 ${node} 2>/dev/null || echo`, { encoding: 'utf8' }).trim();
