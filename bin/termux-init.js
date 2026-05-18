@@ -73,6 +73,44 @@ function run(cmd, opts = {}) {
   return execSync(cmd, { stdio: 'inherit', ...opts });
 }
 
+// Non-throwing variant — returns { ok, error }.
+// Use for steps where a failure should be reported but not abort the bootstrap.
+function tryRun(cmd, opts = {}) {
+  if (flags.dryRun) { log.info(`[dry-run] ${cmd}`); return { ok: true }; }
+  try { execSync(cmd, { stdio: 'inherit', ...opts }); return { ok: true }; }
+  catch (e) { return { ok: false, error: e }; }
+}
+
+// Run `pkg install` with one recovery pass: if it fails (often because a
+// previously-installed package is in `dpkg` half-configured state — e.g. a
+// libplacebo/ffmpeg ABI break on outdated systems), try `apt --fix-broken
+// install -y` to repair the state, then retry the install once.
+function installWithRecovery(label, pkgs) {
+  const cmd = `pkg install -y ${pkgs.join(' ')}`;
+  const first = tryRun(cmd);
+  if (first.ok) return { ok: true };
+
+  log.warn(`${label} install failed; attempting apt --fix-broken install`);
+  const fix = tryRun('apt --fix-broken install -y');
+  if (!fix.ok) {
+    log.err(`apt --fix-broken install also failed — manual recovery needed.`);
+    log.info(`Try on the device:`);
+    log.info(`  pkg upgrade -y`);
+    log.info(`  # if a specific package keeps failing (e.g. ffmpeg):`);
+    log.info(`  dpkg --remove --force-remove-reinstreq <pkg-name>`);
+    log.info(`  pkg upgrade -y && pkg install -y <pkg-name>`);
+    return { ok: false };
+  }
+
+  log.info(`broken state repaired; retrying ${label} install`);
+  const second = tryRun(cmd);
+  if (!second.ok) {
+    log.err(`${label} install still failing after recovery.`);
+    return { ok: false };
+  }
+  return { ok: true };
+}
+
 function runCapture(cmd) {
   try { return execSync(cmd, { encoding: 'utf8' }).trim(); }
   catch { return ''; }
@@ -186,16 +224,47 @@ function stepDetectTermux() {
 }
 
 function stepPkgInstall() {
-  if (flags.skipPkg) { log.step('Skipping pkg install (--skip-pkg)'); return; }
-  log.step('Installing Termux pkg — Tier 1 (core)');
+  if (flags.skipPkg) { log.step('Skipping pkg install (--skip-pkg)'); return { tier1: 'skipped', tier3: 'skipped' }; }
+
+  log.step('Refreshing + upgrading Termux pkg index');
+  // pkg update is the index refresh — fatal if it fails (no network or repo broken).
   run('pkg update -y');
-  run(`pkg install -y ${TIER1.pkg.join(' ')}`);
+  // pkg upgrade keeps installed packages in sync; prevents ABI skew bugs (the
+  // ffmpeg/libplacebo dynamic-link failure seen on long-lived devices). Non-fatal
+  // because a single broken package shouldn't block the whole bootstrap — the
+  // subsequent install step has its own recovery.
+  const up = tryRun('pkg upgrade -y');
+  if (!up.ok) log.warn('pkg upgrade hit a snag; continuing into installs');
+
+  log.step('Installing Termux pkg — Tier 1 (core)');
+  const t1 = installWithRecovery('Tier 1', TIER1.pkg);
+  if (!t1.ok) {
+    // Tier 1 is "must-have"; failing here means subsequent steps (shell/boot/ssh)
+    // would run on an unprepared base. Abort with the clearest message we can.
+    log.err('Tier 1 install failed — bootstrap cannot continue.');
+    log.info('Repair the device, then re-run `termux-init` (it is idempotent).');
+    process.exit(1);
+  }
   log.ok(`tier1: ${TIER1.pkg.length} packages installed`);
 
-  if (flags.noPower) { log.warn('Skipping Tier 3 (--no-power)'); return; }
-  log.step('Installing Termux pkg — Tier 3 (power/media)');
-  run(`pkg install -y ${TIER3.pkg.join(' ')}`);
-  log.ok(`tier3: ${TIER3.pkg.length} packages installed`);
+  let tier3Status = 'skipped';
+  if (flags.noPower) {
+    log.warn('Skipping Tier 3 (--no-power)');
+  } else {
+    log.step('Installing Termux pkg — Tier 3 (power/media)');
+    const t3 = installWithRecovery('Tier 3', TIER3.pkg);
+    if (!t3.ok) {
+      // Tier 3 is optional/nice-to-have; warn but DO NOT abort — the device
+      // still gets shell/boot/ssh wired up so it can join the mesh.
+      log.warn('Tier 3 install failed — continuing without it. Fix manually later.');
+      tier3Status = 'failed';
+    } else {
+      log.ok(`tier3: ${TIER3.pkg.length} packages installed`);
+      tier3Status = 'ok';
+    }
+  }
+
+  return { tier1: 'ok', tier3: tier3Status };
 }
 
 function stepNpmInstall() {
