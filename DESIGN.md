@@ -147,8 +147,27 @@ Eury's own pubkey is also seeded (so Termux devices trust Eury).
 - ❌ Web portals — separate package `gmusic-webportals`
 - ❌ G.Music Assembly layer — separate package `gmusic-assembly`
 
+## Security model
+
+The package contains **no secrets**. All sensitive data (SSH private keys, OAuth tokens, etc.) is generated or fetched at runtime. The actual security boundaries are:
+
+| Layer | What it protects | Who controls it |
+|-------|------------------|------------------|
+| **Tailscale tailnet** (`ferret-harmonic.ts.net`) | The registry endpoint + all node SSH access — none of these are reachable from public internet | Jerry, via Tailscale admin console (approves devices) |
+| **SSH `authorized_keys`** on each node | Inbound SSH; the bundle from `forest-registry /keys` populates this | Each device's local file; populated via mesh-trust step |
+| **OAuth refresh token lifetime** | If the credentials are exfiltrated, they auto-expire (~weeks) | Anthropic-side |
+
+**`--seed-claude-auth=<host>` flag** (opt-in, never automatic): SCPs `~/.claude/.credentials.json` from the named host. Subject to all three layers above. Logs the transfer on the source host (`~/.forest-claude-sync.log`) for audit.
+
+**Known soft spots (acceptable for v1):**
+- `POST /register` on the registry has no auth — any device on the tailnet can register any pubkey. Mitigation: tailnet membership IS the gate.
+- Eury's `authorized_keys` is updated via the registry's bundle; if a hostile device gets on the tailnet, registering pushes its key into Eury's trust. Mitigation: Tailscale approval is manual.
+
 ## Open questions (post-v1)
 
-- Should the registry sign POST requests with a shared secret to prevent unauthorized registration even within tailnet?
-- Should the registry also patch CLAUDE.md / SKILL.md files on Eury automatically when a node registers?
+- Shared secret for `POST /register` (defense in depth even within tailnet)
+- Eury-side approval gate for new registrations (interactive prompt / Tasker notification)
+- Hostname allowlist for `--seed-claude-auth` destinations
+- Should the registry auto-patch Eury's `~/.ssh/authorized_keys` (currently manual)
+- Should the registry auto-patch CLAUDE.md / SKILL.md files on Eury when a node registers
 - Key rotation strategy when a device is lost/wiped

@@ -49,6 +49,7 @@ const flags = {
   dryRun:     argv.includes('--dry-run'),
   help:       argv.includes('--help') || argv.includes('-h'),
   hostname:   flagValue('--hostname'),
+  seedClaudeAuth: flagValue('--seed-claude-auth'),
 };
 
 if (flags.help) {
@@ -58,16 +59,21 @@ if (flags.help) {
 Usage: termux-init [flags]
 
 Flags:
-  --hostname=<name>    Override detected hostname (default: parsed from SSH
-                       key comment, then os.hostname()). Use this on Termux
-                       where os.hostname() returns 'localhost'.
-  --no-power           Skip Tier 3 (Power/Media) packages
-  --skip-pkg           Skip pkg install steps
-  --skip-npm           Skip npm install steps
-  --skip-ssh           Skip SSH key generation + mesh registration
-  --skip-ssh-config    Skip writing ~/.ssh/config Host blocks
-  --dry-run            Print what would happen without making changes
-  --help, -h           Show this help
+  --hostname=<name>           Override detected hostname (default: parsed from
+                              SSH key comment, then os.hostname()). Use on
+                              Termux where os.hostname() is 'localhost'.
+  --seed-claude-auth=<host>   Copy claude-code's OAuth credentials from <host>
+                              over SSH (skip 'claude login' on this device).
+                              Requires SSH trust to <host> and the corresponding
+                              ssh-config Host block to exist. Opt-in only;
+                              never runs automatically. Logged on <host>.
+  --no-power                  Skip Tier 3 (Power/Media) packages
+  --skip-pkg                  Skip pkg install steps
+  --skip-npm                  Skip npm install steps
+  --skip-ssh                  Skip SSH key generation + mesh registration
+  --skip-ssh-config           Skip writing ~/.ssh/config Host blocks
+  --dry-run                   Print what would happen without making changes
+  --help, -h                  Show this help
 `);
   process.exit(0);
 }
@@ -520,6 +526,80 @@ async function stepWriteSshConfig() {
   log.ok(`wrote ${nodes.filter((n) => n.ssh_port != null).length} Host block(s) to ~/.ssh/config`);
 }
 
+// ── stepSeedClaudeAuth — pull claude-code OAuth credentials from a trusted
+//    forest peer (typically Eury) so this device skips `claude login`.
+//
+// SECURITY MODEL: the package ships no secrets. The transfer happens via
+// SCP, which means it inherits the perimeter of:
+//   1. Tailscale tailnet membership (you approve devices via Tailscale)
+//   2. SSH authorized_keys on <host> (your pubkey must be there)
+//   3. OAuth refresh-token lifetime (~weeks)
+// Anyone NOT on the tailnet, OR without an authorized SSH key on <host>,
+// cannot fetch the credentials.
+//
+// This step ALSO writes an audit-log entry on <host> via SSH so you have
+// a trail of which devices pulled credentials and when.
+function stepSeedClaudeAuth() {
+  if (!flags.seedClaudeAuth) return;
+  const src = flags.seedClaudeAuth;
+  log.step(`Seeding claude-code OAuth credentials from ${src}`);
+
+  if (flags.dryRun) {
+    log.info(`[dry-run] would scp ${src}:.claude/.credentials.json → ~/.claude/`);
+    log.info(`[dry-run] would patch ~/.claude.json with hasCompletedOnboarding flags`);
+    return;
+  }
+
+  // 1. Make sure ~/.claude exists with strict perms (matches Larix/Eury).
+  const claudeDir = path.join(HOME, '.claude');
+  fs.mkdirSync(claudeDir, { recursive: true, mode: 0o700 });
+
+  // 2. SCP credentials. Use the ssh-config Host alias if it exists (set by
+  //    stepWriteSshConfig). Run scp with -B (batch mode) so it never prompts
+  //    interactively — if auth fails, we want a clean error, not a hang.
+  const credPath = path.join(claudeDir, '.credentials.json');
+  const scpCmd = `scp -B -o ConnectTimeout=8 ${src}:.claude/.credentials.json ${credPath}`;
+  const scp = spawnSync('sh', ['-c', scpCmd], { stdio: 'inherit' });
+  if (scp.status !== 0) {
+    log.err(`scp from ${src} failed (status ${scp.status}).`);
+    log.info(`  Make sure: (a) ${src} is in your ~/.ssh/config (re-run with full bootstrap),`);
+    log.info(`             (b) your pubkey is in ${src}:~/.ssh/authorized_keys.`);
+    return;
+  }
+  try { fs.chmodSync(credPath, 0o600); } catch {}
+  log.ok(`copied credentials from ${src}`);
+
+  // 3. Patch ~/.claude.json with onboarding flags so claude doesn't run the
+  //    setup wizard on first launch. We merge into whatever's there instead
+  //    of overwriting — preserves cached config (oauthAccount, anonymousId,
+  //    migration completion markers).
+  const cfgPath = path.join(HOME, '.claude.json');
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}
+  const merged = {
+    ...cfg,
+    hasCompletedOnboarding: true,
+    bypassPermissionsModeAccepted: true,
+    lastOnboardingVersion: '2.1.37',
+    installMethod: 'termux-init',
+    autoUpdate: false,
+  };
+  fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2));
+  try { fs.chmodSync(cfgPath, 0o600); } catch {}
+  log.ok('patched ~/.claude.json with onboarding flags');
+
+  // 4. Audit log on the source host so the transfer is traceable. Best-effort;
+  //    don't fail the step if logging doesn't write.
+  const me = os.hostname();
+  const ts = new Date().toISOString();
+  const logLine = `${ts}\t${flags.hostname || me}\tclaude-auth pulled by termux-init v${require(path.join(PKG_ROOT, 'package.json')).version}`;
+  const logCmd = `ssh -n -o BatchMode=yes -o ConnectTimeout=5 ${src} 'echo ${JSON.stringify(logLine)} >> ~/.forest-claude-sync.log'`;
+  spawnSync('sh', ['-c', logCmd], { stdio: 'ignore' });
+
+  log.info('claude on this device now uses the same OAuth account as ' + src);
+  log.warn('shared OAuth = shared usage/quota. Both devices count against the same account.');
+}
+
 function stepSummary() {
   log.step('Bootstrap complete');
   console.log(`
@@ -546,6 +626,7 @@ async function main() {
   stepEnableSshd();
   await stepSshMeshTrust();
   await stepWriteSshConfig();
+  stepSeedClaudeAuth();
   stepSummary();
 }
 
