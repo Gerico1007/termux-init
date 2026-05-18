@@ -12,7 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 
 let express;
 try { express = require('express'); }
@@ -102,13 +102,34 @@ function cmdServe() {
 
   app.post('/register', (req, res) => {
     const { hostname, pubkey, ip } = req.body || {};
-    if (!hostname || typeof hostname !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(hostname)) {
+    // hostname: lowercase DNS-ish label, capped at 63 chars (RFC 1035)
+    if (!hostname || typeof hostname !== 'string'
+        || hostname.length > 63
+        || !/^[a-z0-9][a-z0-9-]*$/.test(hostname)) {
       return res.status(400).json({ error: 'invalid hostname' });
     }
-    if (!pubkey || typeof pubkey !== 'string' || !/^ssh-(rsa|ed25519|ecdsa)/.test(pubkey.trim())) {
+    // pubkey: full SSH authorized_keys line on a SINGLE line. Reject embedded
+    // newlines/control chars — otherwise a malicious payload could inject extra
+    // authorized_keys entries when /keys is consumed downstream.
+    if (!pubkey || typeof pubkey !== 'string') {
       return res.status(400).json({ error: 'invalid pubkey' });
     }
-    const entry = upsertNode(state, { hostname, pubkey: pubkey.trim(), ip });
+    const pk = pubkey.trim();
+    if (pk.length > 8192 || /[\r\n\0]/.test(pk)
+        || !/^ssh-(rsa|ed25519|ecdsa[a-z0-9-]*)\s+[A-Za-z0-9+/=]+(\s+\S.*)?$/.test(pk)) {
+      return res.status(400).json({ error: 'invalid pubkey' });
+    }
+    // ip: optional, but if present must look like an IPv4 dotted-quad. Tailscale
+    // CGNAT range is 100.64.0.0/10 but we don't enforce that here — just shape.
+    let cleanIp = null;
+    if (ip != null && ip !== '') {
+      if (typeof ip !== 'string' || ip.length > 45
+          || !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+        return res.status(400).json({ error: 'invalid ip' });
+      }
+      cleanIp = ip;
+    }
+    const entry = upsertNode(state, { hostname, pubkey: pk, ip: cleanIp });
     saveState(state);
     res.status(200).json({ ok: true, node: entry, total: state.nodes.length });
   });
@@ -136,7 +157,13 @@ function cmdSeed() {
     console.log(`  ✓ seeded self: ${entry.hostname}`);
   } else {
     console.log('  ⚠ no ed25519 key for Eury at ~/.ssh/id_ed25519.pub — generating one');
-    execSync(`ssh-keygen -t ed25519 -N '' -f ${euryPub.replace(/\.pub$/, '')} -C ${os.hostname()}@eury`);
+    const keyFile = euryPub.replace(/\.pub$/, '');
+    const res = spawnSync(
+      'ssh-keygen',
+      ['-t', 'ed25519', '-N', '', '-f', keyFile, '-C', `${os.hostname()}@eury`],
+      { stdio: 'inherit' }
+    );
+    if (res.status !== 0) throw new Error(`ssh-keygen exited ${res.status}`);
     const pub = fs.readFileSync(euryPub, 'utf8').trim();
     upsertNode(state, { hostname: os.hostname(), pubkey: pub, ip: tailscaleIp4() });
   }
