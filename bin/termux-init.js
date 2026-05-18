@@ -130,9 +130,13 @@ function httpRequest(method, url, body) {
       port: u.port || (u.protocol === 'https:' ? 443 : 80),
       path: u.pathname + u.search,
       headers: {},
-      // For tailnet-only with self-signed certs, allow:
-      rejectUnauthorized: false,
     };
+    // For HTTPS to the tailnet-internal registry (typically a self-signed cert
+    // since the host is *.ts.net), opt out of cert verification — but only when
+    // explicitly requested, never by default. Plain http: ignores this anyway.
+    if (u.protocol === 'https:' && process.env.FOREST_REGISTRY_INSECURE === '1') {
+      opts.rejectUnauthorized = false;
+    }
     let payload;
     if (body !== undefined) {
       payload = typeof body === 'string' ? body : JSON.stringify(body);
@@ -240,11 +244,24 @@ async function stepSshMeshTrust() {
 
   const keyPath = path.join(HOME, '.ssh/id_ed25519');
   const pubPath = `${keyPath}.pub`;
-  ensureDir(path.join(HOME, '.ssh'));
+  const sshDir = path.join(HOME, '.ssh');
+  ensureDir(sshDir);
+  // SSH refuses to use ~/.ssh or private keys with loose perms.
+  if (!flags.dryRun) {
+    try { fs.chmodSync(sshDir, 0o700); } catch {}
+  }
   if (!fs.existsSync(keyPath)) {
     if (flags.dryRun) { log.info('[dry-run] ssh-keygen -t ed25519'); }
     else {
-      execSync(`ssh-keygen -t ed25519 -N '' -f ${keyPath} -C ${os.hostname()}@termux-init`, { stdio: 'inherit' });
+      // Use spawnSync with argv to avoid shell interpolation of os.hostname()
+      // (a hostname containing $, ;, or backticks would be a code-exec vector).
+      const comment = `${os.hostname()}@termux-init`;
+      const res = spawnSync(
+        'ssh-keygen',
+        ['-t', 'ed25519', '-N', '', '-f', keyPath, '-C', comment],
+        { stdio: 'inherit' }
+      );
+      if (res.status !== 0) throw new Error(`ssh-keygen exited ${res.status}`);
       log.ok('generated ed25519 keypair');
     }
   } else {
