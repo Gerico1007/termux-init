@@ -33,13 +33,22 @@ const log = {
 
 // ── CLI flags ───────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
+function flagValue(name) {
+  const eq = argv.find((a) => a.startsWith(`${name}=`));
+  if (eq) return eq.slice(name.length + 1);
+  const idx = argv.indexOf(name);
+  if (idx >= 0 && argv[idx + 1] && !argv[idx + 1].startsWith('--')) return argv[idx + 1];
+  return null;
+}
 const flags = {
   noPower:    argv.includes('--no-power'),
   skipPkg:    argv.includes('--skip-pkg'),
   skipNpm:    argv.includes('--skip-npm'),
   skipSsh:    argv.includes('--skip-ssh'),
+  skipSshCfg: argv.includes('--skip-ssh-config'),
   dryRun:     argv.includes('--dry-run'),
   help:       argv.includes('--help') || argv.includes('-h'),
+  hostname:   flagValue('--hostname'),
 };
 
 if (flags.help) {
@@ -49,12 +58,16 @@ if (flags.help) {
 Usage: termux-init [flags]
 
 Flags:
-  --no-power     Skip Tier 3 (Power/Media) packages
-  --skip-pkg     Skip pkg install steps
-  --skip-npm     Skip npm install steps
-  --skip-ssh     Skip SSH key generation + mesh registration
-  --dry-run      Print what would happen without making changes
-  --help, -h     Show this help
+  --hostname=<name>    Override detected hostname (default: parsed from SSH
+                       key comment, then os.hostname()). Use this on Termux
+                       where os.hostname() returns 'localhost'.
+  --no-power           Skip Tier 3 (Power/Media) packages
+  --skip-pkg           Skip pkg install steps
+  --skip-npm           Skip npm install steps
+  --skip-ssh           Skip SSH key generation + mesh registration
+  --skip-ssh-config    Skip writing ~/.ssh/config Host blocks
+  --dry-run            Print what would happen without making changes
+  --help, -h           Show this help
 `);
   process.exit(0);
 }
@@ -273,6 +286,34 @@ function stepNpmInstall() {
   for (const pkg of TIER1.npmGlobal) {
     run(`npm install -g ${pkg}`);
     log.ok(`npm global: ${pkg}`);
+    // Some npm versions (notably global installs on Termux) skip the package's
+    // postinstall script silently, which leaves @anthropic-ai/claude-code with
+    // its native binary missing — `claude login` then errors. Run the
+    // postinstall ourselves to guarantee the platform-native binary lands.
+    if (pkg === '@anthropic-ai/claude-code') runClaudeCodePostinstall();
+  }
+}
+
+function runClaudeCodePostinstall() {
+  if (flags.dryRun) {
+    log.info('[dry-run] would run @anthropic-ai/claude-code postinstall');
+    return;
+  }
+  let globalRoot = '';
+  try { globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim(); }
+  catch (e) { log.warn(`npm root -g failed: ${e.message}; skipping claude postinstall`); return; }
+
+  const installScript = path.join(globalRoot, '@anthropic-ai/claude-code/install.cjs');
+  if (!fs.existsSync(installScript)) {
+    log.warn(`claude-code install.cjs not found at ${installScript}; skipping`);
+    return;
+  }
+
+  const r = spawnSync('node', [installScript], { stdio: 'inherit' });
+  if (r.status !== 0) {
+    log.warn(`claude-code postinstall exited ${r.status} — try manually: node ${installScript}`);
+  } else {
+    log.ok('claude-code native binary installed');
   }
 }
 
@@ -350,7 +391,7 @@ async function stepSshMeshTrust() {
   }
 
   const myPub = fs.readFileSync(pubPath, 'utf8').trim();
-  const hostname = os.hostname();
+  const hostname = detectHostname(myPub);
   let tailscaleIp = '';
   try {
     tailscaleIp = runCapture('tailscale ip -4 2>/dev/null | head -1');
@@ -386,20 +427,105 @@ async function stepSshMeshTrust() {
   fs.chmodSync(authPath, 0o600);
   log.ok(`authorized_keys: +${added} new entries (${have.size} total)`);
 
-  // POST /register
+  // POST /register — send platform so the registry can attach correct ssh_port
+  // metadata (consumers of GET /nodes use this to build ~/.ssh/config).
+  const registerBody = { hostname, pubkey: myPub, ip: tailscaleIp, platform: 'termux' };
   try {
     const r = await withRetry('POST /register', async () => {
-      const r = await httpRequest('POST', `${REGISTRY_URL}/register`, {
-        hostname, pubkey: myPub, ip: tailscaleIp,
-      });
+      const r = await httpRequest('POST', `${REGISTRY_URL}/register`, registerBody);
       if (r.status !== 200 && r.status !== 201) throw new Error(`HTTP ${r.status}: ${r.body}`);
       return r;
     });
-    log.ok(`registered with forest-registry: ${r.body}`);
+    log.ok(`registered as '${hostname}' (termux): ${r.body}`);
   } catch (e) {
     log.warn(`registration POST failed: ${e.message}`);
-    log.info(`Manual fallback — on Eury:\n  curl -X POST ${REGISTRY_URL}/register \\\n    -H 'Content-Type: application/json' \\\n    -d '${JSON.stringify({ hostname, pubkey: myPub, ip: tailscaleIp })}'`);
+    log.info(`Manual fallback — on Eury:\n  curl -X POST ${REGISTRY_URL}/register \\\n    -H 'Content-Type: application/json' \\\n    -d '${JSON.stringify(registerBody)}'`);
   }
+}
+
+// Detect the hostname this device should register under. Priority:
+//   1. --hostname flag (explicit override)
+//   2. SSH key comment (we wrote `<host>@termux-init` during seed/keygen)
+//   3. os.hostname() — last resort, warned if it's 'localhost'
+function detectHostname(myPub) {
+  if (flags.hostname) {
+    log.info(`hostname from --hostname flag: ${flags.hostname}`);
+    return flags.hostname;
+  }
+  const parts = myPub.trim().split(/\s+/);
+  if (parts.length >= 3) {
+    const comment = parts.slice(2).join(' ');
+    const m = comment.match(/^([a-z0-9][a-z0-9-]*)@/);
+    if (m) {
+      log.info(`hostname from ssh key comment: ${m[1]}`);
+      return m[1];
+    }
+  }
+  const sys = os.hostname();
+  if (sys === 'localhost' || sys === 'localhost.localdomain' || !sys) {
+    log.warn(`os.hostname() returned '${sys}' — registry needs a stable name.`);
+    log.warn(`Re-run with --hostname=<name> (e.g., --hostname=abies).`);
+    log.warn(`Continuing with 'localhost' would create a bogus registry entry.`);
+    process.exit(1);
+  }
+  log.info(`hostname from os.hostname(): ${sys}`);
+  return sys;
+}
+
+// ── stepWriteSshConfig — generate ~/.ssh/config Host blocks for every forest
+//    node so `ssh larix` (et al.) just works with the correct port per platform.
+async function stepWriteSshConfig() {
+  if (flags.skipSshCfg) { log.step('Skipping SSH config (--skip-ssh-config)'); return; }
+  log.step('Writing ~/.ssh/config Host blocks');
+
+  if (flags.dryRun) { log.info('[dry-run] would GET /nodes and rewrite ~/.ssh/config block'); return; }
+
+  let nodes;
+  try {
+    const r = await httpRequest('GET', `${REGISTRY_URL}/nodes`);
+    if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+    nodes = JSON.parse(r.body).nodes;
+  } catch (e) {
+    log.warn(`couldn't fetch /nodes (${e.message}); skipping ssh config write`);
+    return;
+  }
+
+  const begin = '# >>> forest-of-gerico (managed by termux-init) >>>';
+  const end   = '# <<< forest-of-gerico <<<';
+
+  const blocks = nodes
+    .filter((n) => n.ssh_port != null)  // skip iOS / unknown — they have no sshd
+    .map((n) => {
+      // Use Tailscale magic DNS as HostName so it survives IP changes.
+      const fqdn = `${n.hostname}.ferret-harmonic.ts.net`;
+      return [
+        `Host ${n.hostname}`,
+        `    HostName ${fqdn}`,
+        `    Port ${n.ssh_port}`,
+        `    User gmusic`,
+        `    IdentityFile ~/.ssh/id_ed25519`,
+        ``,
+      ].join('\n');
+    })
+    .join('');
+
+  const fenced = `${begin}\n${blocks}${end}\n`;
+  const cfgPath = path.join(HOME, '.ssh/config');
+  let current = '';
+  try { current = fs.readFileSync(cfgPath, 'utf8'); } catch {}
+
+  // Replace existing block if sentinel present, else append.
+  const fenceRe = new RegExp(
+    `${begin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${end.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n?`,
+    'm'
+  );
+  const next = fenceRe.test(current)
+    ? current.replace(fenceRe, fenced)
+    : (current + (current.endsWith('\n') || !current ? '' : '\n') + '\n' + fenced);
+
+  fs.writeFileSync(cfgPath, next);
+  fs.chmodSync(cfgPath, 0o600);
+  log.ok(`wrote ${nodes.filter((n) => n.ssh_port != null).length} Host block(s) to ~/.ssh/config`);
 }
 
 function stepSummary() {
@@ -427,6 +553,7 @@ async function main() {
   stepShellAndBoot();
   stepEnableSshd();
   await stepSshMeshTrust();
+  await stepWriteSshConfig();
   stepSummary();
 }
 

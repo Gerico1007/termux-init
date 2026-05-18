@@ -25,16 +25,36 @@ alias claude="TMPDIR=\"$HOME/tmp\" claude --dangerously-skip-permissions"
 [ -f "$HOME/.env" ] && set -a && . "$HOME/.env" && set +a
 
 # ── Forest of Gerico — mesh status helper ───────────────────────────
+# Asks the forest-registry for the current node roster (including platform +
+# ssh_port), then probes each node with a real SSH handshake. iOS nodes (no
+# sshd) are labeled accordingly. Falls back to a hardcoded roster if the
+# registry is unreachable.
 forest-status() {
-  local nodes="eury larix ilex tilia abies iroko ginkgo itea"
-  for n in $nodes; do
-    printf "%-8s " "$n"
-    if command -v tailscale >/dev/null 2>&1; then
-      tailscale ping -c 1 "$n" 2>/dev/null | grep -E 'pong|timed out|no route' | head -1 || echo "(no response)"
-    else
-      ping -c 1 -W 2 "$n.ferret-harmonic.ts.net" >/dev/null 2>&1 && echo "reachable" || echo "unreachable"
-    fi
-  done
+  local registry="${FOREST_REGISTRY_URL:-http://eury.ferret-harmonic.ts.net:8771}"
+  local nodes_json
+  if command -v jq >/dev/null 2>&1 \
+      && nodes_json=$(curl -sf --max-time 3 "$registry/nodes" 2>/dev/null); then
+    echo "$nodes_json" | jq -r '.nodes[] | "\(.hostname)\t\(.platform // "?")\t\(.ssh_port // "-")"' \
+      | while IFS=$'\t' read -r host platform port; do
+        printf "%-10s [%-6s] " "$host" "$platform"
+        if [ "$port" = "-" ] || [ -z "$port" ]; then
+          echo "no sshd"
+        elif ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
+                "$host" true 2>/dev/null; then
+          echo "ssh ok"
+        else
+          echo "ssh unreachable"
+        fi
+      done
+  else
+    echo "⚠ registry $registry unreachable; probing fallback roster via SSH config"
+    local fallback="eury larix ilex tilia abies"
+    for n in $fallback; do
+      printf "%-10s          " "$n"
+      ssh -o BatchMode=yes -o ConnectTimeout=3 "$n" true 2>/dev/null \
+        && echo "ssh ok" || echo "ssh unreachable"
+    done
+  fi
 }
 
 # ── Eury connection — ngrok backup (Tailscale primary) ──────────────

@@ -43,12 +43,16 @@ function saveState(state) {
   fs.renameSync(tmp, STATE_FILE);
 }
 
-function upsertNode(state, { hostname, pubkey, ip }) {
+// Platform → default sshd port. Used by /nodes consumers to build ~/.ssh/config.
+const PLATFORM_PORTS = { linux: 22, termux: 8022, ios: null };
+
+function upsertNode(state, { hostname, pubkey, ip, platform }) {
   const existing = state.nodes.find((n) => n.hostname === hostname);
   const entry = {
     hostname,
     pubkey,
     ip: ip || null,
+    platform: platform || existing?.platform || 'unknown',
     registered_at: existing?.registered_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -94,14 +98,27 @@ function cmdServe() {
     res.json({
       port: PORT,
       registered: state.nodes.length,
-      nodes: state.nodes.map(({ hostname, ip, registered_at, updated_at }) => ({
-        hostname, ip, registered_at, updated_at,
+      nodes: state.nodes.map(({ hostname, ip, platform, registered_at, updated_at }) => ({
+        hostname, ip, platform: platform || 'unknown', registered_at, updated_at,
+      })),
+    });
+  });
+
+  // /nodes is the structured feed consumers use to build ~/.ssh/config etc.
+  // Returns hostname, ip, platform, ssh_port — but NOT the pubkey (use /keys for that).
+  app.get('/nodes', (req, res) => {
+    res.json({
+      nodes: state.nodes.map(({ hostname, ip, platform }) => ({
+        hostname,
+        ip: ip || null,
+        platform: platform || 'unknown',
+        ssh_port: PLATFORM_PORTS[platform] ?? null,
       })),
     });
   });
 
   app.post('/register', (req, res) => {
-    const { hostname, pubkey, ip } = req.body || {};
+    const { hostname, pubkey, ip, platform } = req.body || {};
     // hostname: lowercase DNS-ish label, capped at 63 chars (RFC 1035)
     if (!hostname || typeof hostname !== 'string'
         || hostname.length > 63
@@ -129,7 +146,17 @@ function cmdServe() {
       }
       cleanIp = ip;
     }
-    const entry = upsertNode(state, { hostname, pubkey: pk, ip: cleanIp });
+    // platform: optional, restricted to a known whitelist. Drives ssh_port in
+    // GET /nodes, so consumers can build correct ~/.ssh/config blocks.
+    let cleanPlatform = null;
+    if (platform != null && platform !== '') {
+      if (typeof platform !== 'string'
+          || !Object.prototype.hasOwnProperty.call(PLATFORM_PORTS, platform)) {
+        return res.status(400).json({ error: 'invalid platform' });
+      }
+      cleanPlatform = platform;
+    }
+    const entry = upsertNode(state, { hostname, pubkey: pk, ip: cleanIp, platform: cleanPlatform });
     saveState(state);
     res.status(200).json({ ok: true, node: entry, total: state.nodes.length });
   });
@@ -140,7 +167,7 @@ function cmdServe() {
   app.listen(PORT, bindIp, () => {
     console.log(`♠️🌿🎸🧵 forest-registry listening on ${bindIp}:${PORT}`);
     console.log(`         Tailscale-only. State: ${STATE_FILE}`);
-    console.log(`         Endpoints: GET /keys, POST /register, GET /status`);
+    console.log(`         Endpoints: GET /keys, GET /nodes, GET /status, POST /register`);
   });
 }
 
@@ -149,13 +176,9 @@ function cmdSeed() {
   console.log('♠️🌿🎸🧵 forest-registry seed — collecting pubkeys from known Termux nodes');
   const state = loadState();
 
-  // Seed Eury (self)
+  // Seed Eury (self) — platform=linux, port 22
   const euryPub = path.join(os.homedir(), '.ssh/id_ed25519.pub');
-  if (fs.existsSync(euryPub)) {
-    const pub = fs.readFileSync(euryPub, 'utf8').trim();
-    const entry = upsertNode(state, { hostname: os.hostname(), pubkey: pub, ip: tailscaleIp4() });
-    console.log(`  ✓ seeded self: ${entry.hostname}`);
-  } else {
+  if (!fs.existsSync(euryPub)) {
     console.log('  ⚠ no ed25519 key for Eury at ~/.ssh/id_ed25519.pub — generating one');
     const keyFile = euryPub.replace(/\.pub$/, '');
     const res = spawnSync(
@@ -164,9 +187,15 @@ function cmdSeed() {
       { stdio: 'inherit' }
     );
     if (res.status !== 0) throw new Error(`ssh-keygen exited ${res.status}`);
-    const pub = fs.readFileSync(euryPub, 'utf8').trim();
-    upsertNode(state, { hostname: os.hostname(), pubkey: pub, ip: tailscaleIp4() });
   }
+  const euryPubData = fs.readFileSync(euryPub, 'utf8').trim();
+  const euryEntry = upsertNode(state, {
+    hostname: os.hostname(),
+    pubkey: euryPubData,
+    ip: tailscaleIp4(),
+    platform: 'linux',
+  });
+  console.log(`  ✓ seeded self: ${euryEntry.hostname} (linux)`);
 
   for (const node of KNOWN_TERMUX_NODES) {
     process.stdout.write(`  ${node}: `);
@@ -184,8 +213,8 @@ function cmdSeed() {
         { encoding: 'utf8' }
       ).trim();
       const ip = execSync(`tailscale ip -4 ${node} 2>/dev/null || echo`, { encoding: 'utf8' }).trim();
-      const entry = upsertNode(state, { hostname: node, pubkey: pub, ip });
-      console.log(`✓ ${entry.pubkey.split(/\s+/)[1].slice(0, 16)}…`);
+      const entry = upsertNode(state, { hostname: node, pubkey: pub, ip, platform: 'termux' });
+      console.log(`✓ ${entry.pubkey.split(/\s+/)[1].slice(0, 16)}… (termux)`);
     } catch (e) {
       console.log(`✗ ${e.message.split('\n')[0]}`);
     }
@@ -201,7 +230,8 @@ function cmdStatus() {
   console.log(`♠️🌿🎸🧵 forest-registry — ${state.nodes.length} node(s)`);
   console.log(`State file: ${STATE_FILE}\n`);
   for (const n of state.nodes) {
-    console.log(`  ${n.hostname.padEnd(10)} ${(n.ip || '?').padEnd(18)} registered=${n.registered_at}`);
+    const platform = (n.platform || 'unknown').padEnd(7);
+    console.log(`  ${n.hostname.padEnd(10)} ${(n.ip || '?').padEnd(18)} [${platform}] registered=${n.registered_at}`);
   }
 }
 
