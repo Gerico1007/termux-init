@@ -1,6 +1,6 @@
 {
   "name": "@gerico1007/termux-init",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Bootstrap a Termux device into the Forest of Gerico mesh — installs base + power tools, wires .bashrc, drops boot script, joins the SSH trust ring.",
   "license": "MIT",
   "author": "Jerry (Gerico1007) <mia@jgwill.com>",

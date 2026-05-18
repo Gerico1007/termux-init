@@ -38,6 +38,6 @@
     "sudo"
   ],
   "npmGlobal": [
-    "@anthropic-ai/claude-code"
+    "@anthropic-ai/claude-code@2.1.37"
   ]
 }

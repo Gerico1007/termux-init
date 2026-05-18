@@ -283,39 +283,31 @@ function stepPkgInstall() {
 function stepNpmInstall() {
   if (flags.skipNpm) { log.step('Skipping npm install (--skip-npm)'); return; }
   log.step('Installing npm globals');
-  for (const pkg of TIER1.npmGlobal) {
-    run(`npm install -g ${pkg}`);
-    log.ok(`npm global: ${pkg}`);
-    // Some npm versions (notably global installs on Termux) skip the package's
-    // postinstall script silently, which leaves @anthropic-ai/claude-code with
-    // its native binary missing — `claude login` then errors. Run the
-    // postinstall ourselves to guarantee the platform-native binary lands.
-    if (pkg === '@anthropic-ai/claude-code') runClaudeCodePostinstall();
+  for (const spec of TIER1.npmGlobal) {
+    // Strip @version to get the bare package name for uninstall.
+    // '@anthropic-ai/claude-code@2.1.37' → '@anthropic-ai/claude-code'
+    const pkgName = spec.startsWith('@')
+      ? '@' + spec.slice(1).split('@')[0]
+      : spec.split('@')[0];
+
+    // Defensive uninstall: claude-code 2.1.143+ ships a native binary that has
+    // no android-arm64 variant — Termux installs end up with a broken stub
+    // (`claude` errors with "native binary not installed"). If a prior version
+    // is around, remove it before installing the pinned version below so we
+    // never serve a broken claude alongside our shell alias.
+    if (pkgName === '@anthropic-ai/claude-code') {
+      tryRun(`npm uninstall -g ${pkgName}`);
+    }
+
+    run(`npm install -g ${spec}`);
+    log.ok(`npm global: ${spec}`);
   }
 }
 
-function runClaudeCodePostinstall() {
-  if (flags.dryRun) {
-    log.info('[dry-run] would run @anthropic-ai/claude-code postinstall');
-    return;
-  }
-  let globalRoot = '';
-  try { globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim(); }
-  catch (e) { log.warn(`npm root -g failed: ${e.message}; skipping claude postinstall`); return; }
-
-  const installScript = path.join(globalRoot, '@anthropic-ai/claude-code/install.cjs');
-  if (!fs.existsSync(installScript)) {
-    log.warn(`claude-code install.cjs not found at ${installScript}; skipping`);
-    return;
-  }
-
-  const r = spawnSync('node', [installScript], { stdio: 'inherit' });
-  if (r.status !== 0) {
-    log.warn(`claude-code postinstall exited ${r.status} — try manually: node ${installScript}`);
-  } else {
-    log.ok('claude-code native binary installed');
-  }
-}
+// (removed) runClaudeCodePostinstall — claude-code 2.1.37 is pure-JS and
+// doesn't need a postinstall to fetch native binaries. Newer 2.1.143+ ships
+// a Bun-compiled native binary with no android-arm64 variant published, so
+// we pin to 2.1.37 in tier1-core.json rather than chase a workaround.
 
 function stepShellAndBoot() {
   log.step('Writing shell + boot config');
