@@ -1,0 +1,20 @@
+{
+  "name": "tier3-power",
+  "description": "Power user & media packages. Installed by default; pass --no-power to skip.",
+  "pkg": [
+    "ffmpeg",
+    "timidity++",
+    "play-audio",
+    "redis",
+    "syncthing",
+    "ollama",
+    "rust",
+    "rust-std-aarch64-linux-android",
+    "clang",
+    "cmake",
+    "make",
+    "ninja",
+    "pkg-config"
+  ],
+  "npmGlobal": []
+}

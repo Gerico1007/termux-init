@@ -1,0 +1,43 @@
+{
+  "name": "tier1-core",
+  "description": "Core base packages — always installed by termux-init. Makes a Termux device team-ready.",
+  "pkg": [
+    "openssh",
+    "openssh-sftp-server",
+    "tmux",
+    "git",
+    "git-lfs",
+    "gh",
+    "curl",
+    "wget",
+    "jq",
+    "fzf",
+    "ripgrep",
+    "htop",
+    "lsof",
+    "less",
+    "nodejs",
+    "npm",
+    "python",
+    "python-pip",
+    "openssl",
+    "openssl-tool",
+    "ca-certificates",
+    "termux-api",
+    "termux-services",
+    "termux-tools",
+    "termux-auth",
+    "build-essential",
+    "keychain",
+    "dnsutils",
+    "net-tools",
+    "inetutils",
+    "iproute2",
+    "rsync",
+    "nmap",
+    "sudo"
+  ],
+  "npmGlobal": [
+    "@anthropic-ai/claude-code"
+  ]
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Forest of Gerico — SSH trust registry (tailnet-only)
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env forest-registry serve
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=default.target
