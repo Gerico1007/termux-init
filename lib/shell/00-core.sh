@@ -39,8 +39,11 @@ forest-status() {
         printf "%-10s [%-6s] " "$host" "$platform"
         if [ "$port" = "-" ] || [ -z "$port" ]; then
           echo "no sshd"
-        elif ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
+        elif ssh -n -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
                 "$host" true 2>/dev/null; then
+          # -n above redirects ssh's stdin from /dev/null. Without it ssh would
+          # slurp the rest of the while-read pipe input on its first success,
+          # and the loop would silently exit after the first reachable node.
           echo "ssh ok"
         else
           echo "ssh unreachable"
@@ -51,7 +54,7 @@ forest-status() {
     local fallback="eury larix ilex tilia abies"
     for n in $fallback; do
       printf "%-10s          " "$n"
-      ssh -o BatchMode=yes -o ConnectTimeout=3 "$n" true 2>/dev/null \
+      ssh -n -o BatchMode=yes -o ConnectTimeout=3 "$n" true 2>/dev/null \
         && echo "ssh ok" || echo "ssh unreachable"
     done
   fi
