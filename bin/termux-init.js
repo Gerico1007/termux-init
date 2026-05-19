@@ -52,6 +52,20 @@ const flags = {
   seedClaudeAuth: flagValue('--seed-claude-auth'),
 };
 
+// Validate user-supplied flag values that end up in registry payloads or
+// SSH/SCP commands. Doing this at parse time gives a clean early error and
+// removes any chance of shell metacharacters reaching a later interpolation.
+const REGISTRY_HOSTNAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;        // matches server-side validator
+const SSH_HOST_ALIAS_RE   = /^([a-z_][a-z0-9_-]{0,31}@)?[a-z0-9][a-z0-9._-]{0,253}$/i;
+if (flags.hostname != null && !REGISTRY_HOSTNAME_RE.test(flags.hostname)) {
+  console.error(`✗ --hostname must be lowercase alnum/dash, ≤63 chars (got: ${JSON.stringify(flags.hostname)})`);
+  process.exit(2);
+}
+if (flags.seedClaudeAuth != null && !SSH_HOST_ALIAS_RE.test(flags.seedClaudeAuth)) {
+  console.error(`✗ --seed-claude-auth must be a plain ssh host alias, optionally user@host (got: ${JSON.stringify(flags.seedClaudeAuth)})`);
+  process.exit(2);
+}
+
 if (flags.help) {
   console.log(`
 @gerico1007/termux-init — bootstrap a Termux device into the Forest of Gerico
@@ -557,9 +571,16 @@ function stepSeedClaudeAuth() {
   // 2. SCP credentials. Use the ssh-config Host alias if it exists (set by
   //    stepWriteSshConfig). Run scp with -B (batch mode) so it never prompts
   //    interactively — if auth fails, we want a clean error, not a hang.
+  //
+  // Use spawnSync argv (no shell) so `src` is never re-parsed by a shell.
+  // The `src:.claude/.credentials.json` argument is interpreted by scp itself,
+  // and we've already validated src against SSH_HOST_ALIAS_RE at flag-parse time.
   const credPath = path.join(claudeDir, '.credentials.json');
-  const scpCmd = `scp -B -o ConnectTimeout=8 ${src}:.claude/.credentials.json ${credPath}`;
-  const scp = spawnSync('sh', ['-c', scpCmd], { stdio: 'inherit' });
+  const scp = spawnSync(
+    'scp',
+    ['-B', '-o', 'ConnectTimeout=8', `${src}:.claude/.credentials.json`, credPath],
+    { stdio: 'inherit' }
+  );
   if (scp.status !== 0) {
     log.err(`scp from ${src} failed (status ${scp.status}).`);
     log.info(`  Make sure: (a) ${src} is in your ~/.ssh/config (re-run with full bootstrap),`);
@@ -590,11 +611,20 @@ function stepSeedClaudeAuth() {
 
   // 4. Audit log on the source host so the transfer is traceable. Best-effort;
   //    don't fail the step if logging doesn't write.
+  //
+  // The remote command runs under the remote shell, so we POSIX-quote the
+  // log line (escape any embedded single quotes). The outer ssh invocation
+  // uses argv (no local shell) so `src` is passed straight to ssh.
   const me = os.hostname();
   const ts = new Date().toISOString();
   const logLine = `${ts}\t${flags.hostname || me}\tclaude-auth pulled by termux-init v${require(path.join(PKG_ROOT, 'package.json')).version}`;
-  const logCmd = `ssh -n -o BatchMode=yes -o ConnectTimeout=5 ${src} 'echo ${JSON.stringify(logLine)} >> ~/.forest-claude-sync.log'`;
-  spawnSync('sh', ['-c', logCmd], { stdio: 'ignore' });
+  const sq = (s) => `'` + String(s).replace(/'/g, `'\\''`) + `'`;
+  const remoteCmd = `printf '%s\\n' ${sq(logLine)} >> ~/.forest-claude-sync.log`;
+  spawnSync(
+    'ssh',
+    ['-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', src, remoteCmd],
+    { stdio: 'ignore' }
+  );
 
   log.info('claude on this device now uses the same OAuth account as ' + src);
   log.warn('shared OAuth = shared usage/quota. Both devices count against the same account.');
