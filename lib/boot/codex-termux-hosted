@@ -1,0 +1,3 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Launch Codex from Ubuntu/proot while keeping the working directory in shared Termux home.
+exec proot-distro login ubuntu -- /usr/bin/bash -lc 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; cd /data/data/com.termux/files/home; exec codex'

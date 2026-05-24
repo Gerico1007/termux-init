@@ -42,6 +42,8 @@ function flagValue(name) {
 }
 const flags = {
   noPower:    argv.includes('--no-power'),
+  withCodex:  argv.includes('--with-codex'),
+  restoreCodexOnBoot: argv.includes('--restore-codex-on-boot'),
   skipPkg:    argv.includes('--skip-pkg'),
   skipNpm:    argv.includes('--skip-npm'),
   skipSsh:    argv.includes('--skip-ssh'),
@@ -81,6 +83,9 @@ Flags:
                               Requires SSH trust to <host> and the corresponding
                               ssh-config Host block to exist. Opt-in only;
                               never runs automatically. Logged on <host>.
+  --with-codex                Install Ubuntu/proot Codex support and launchers
+  --restore-codex-on-boot    Enable boot-time recreation of codex-termux and
+                              codex-ubuntu-bridge tmux sessions
   --no-power                  Skip Tier 3 (Power/Media) packages
   --skip-pkg                  Skip pkg install steps
   --skip-npm                  Skip npm install steps
@@ -166,6 +171,22 @@ function overwriteFile(dst, src, mode) {
   fs.copyFileSync(src, dst);
   if (mode != null) fs.chmodSync(dst, mode);
   log.ok(`wrote ${dst}`);
+}
+
+function ensureEnvVar(filePath, key, value) {
+  let current = '';
+  try { current = fs.readFileSync(filePath, 'utf8'); } catch {}
+  const line = `${key}=${value}`;
+  const rx = new RegExp(`^${key}=.*$`, 'm');
+  const next = rx.test(current)
+    ? current.replace(rx, line)
+    : `${current}${current && !current.endsWith('\n') ? '\n' : ''}${line}\n`;
+  if (flags.dryRun) {
+    log.info(`[dry-run] set ${key}=${value} in ${filePath}`);
+    return;
+  }
+  fs.writeFileSync(filePath, next);
+  log.ok(`configured ${key} in ${filePath}`);
 }
 
 function ensureBashrcStub() {
@@ -333,6 +354,8 @@ function stepShellAndBoot() {
   log.step('Writing shell + boot config');
   ensureDir(path.join(HOME, '.bashrc.d'));
   ensureDir(path.join(HOME, '.termux/boot'));
+  ensureDir(path.join(HOME, '.config/forest'));
+  ensureDir(path.join(HOME, '.local/bin'));
   ensureDir(path.join(HOME, 'tmp'));
 
   overwriteFile(
@@ -347,6 +370,29 @@ function stepShellAndBoot() {
     0o755,
   );
 
+  overwriteFile(
+    path.join(HOME, '.local/bin/sshd-keeper.sh'),
+    path.join(PKG_ROOT, 'lib/boot/sshd-keeper.sh'),
+    0o755,
+  );
+
+  overwriteFile(
+    path.join(HOME, '.local/bin/codex-termux-hosted'),
+    path.join(PKG_ROOT, 'lib/boot/codex-termux-hosted'),
+    0o755,
+  );
+
+  overwriteFile(
+    path.join(HOME, '.local/bin/codex-ubuntu-bridge'),
+    path.join(PKG_ROOT, 'lib/boot/codex-ubuntu-bridge'),
+    0o755,
+  );
+
+  writeFileIfMissing(
+    path.join(HOME, '.config/forest/persistence.env'),
+    path.join(PKG_ROOT, 'lib/env/forest-persistence.env.example'),
+  );
+
   writeFileIfMissing(
     path.join(HOME, '.env'),
     path.join(PKG_ROOT, 'lib/env/env.example'),
@@ -356,6 +402,28 @@ function stepShellAndBoot() {
     path.join(HOME, '.termux/termux.properties'),
     path.join(PKG_ROOT, 'lib/termux/termux.properties'),
   );
+
+  if (flags.restoreCodexOnBoot) {
+    const envPath = path.join(HOME, '.config/forest/persistence.env');
+    ensureEnvVar(envPath, 'RESTORE_CODEX_TERMUX', '1');
+    ensureEnvVar(envPath, 'RESTORE_CODEX_UBUNTU_BRIDGE', '1');
+  }
+}
+
+function stepInstallCodexSupport() {
+  if (!flags.withCodex) return;
+  log.step('Installing Codex Ubuntu/proot support');
+  const installer = path.join(PKG_ROOT, 'lib/codex/install-codex-ubuntu.sh');
+  if (flags.dryRun) {
+    log.info(`[dry-run] sh ${installer}`);
+    return;
+  }
+  const res = spawnSync('sh', [installer], { stdio: 'inherit' });
+  if (res.status !== 0) {
+    log.err(`Codex Ubuntu bootstrap failed (exit ${res.status}).`);
+    process.exit(res.status || 1);
+  }
+  log.ok('Codex Ubuntu support installed');
 }
 
 function stepEnableSshd() {
@@ -632,12 +700,17 @@ function stepSeedClaudeAuth() {
 
 function stepSummary() {
   log.step('Bootstrap complete');
+  const codexLines = flags.withCodex ? `
+    5. ${`\x1b[36m`}tmux attach -t codex-termux${`\x1b[0m`}         — Codex in shared Termux home
+    6. ${`\x1b[36m`}tmux attach -t codex-ubuntu-bridge${`\x1b[0m`}  — Ubuntu tmux bridge to Codex
+` : '';
   console.log(`
   Next steps on this device:
     1. Launch Termux:Boot once  — opens the app so its boot receiver activates
     2. ${`\x1b[36m`}claude login${`\x1b[0m`}              — authenticate Claude Code CLI
     3. ${`\x1b[36m`}source ~/.bashrc${`\x1b[0m`}          — pick up the new shell config (or reopen Termux)
     4. ${`\x1b[36m`}forest-status${`\x1b[0m`}             — verify mesh connectivity to every Forest node
+${codexLines}
 
   Re-run any time with: ${`\x1b[36m`}termux-init${`\x1b[0m`}  (idempotent)
 `);
@@ -653,6 +726,7 @@ async function main() {
   stepPkgInstall();
   stepNpmInstall();
   stepShellAndBoot();
+  stepInstallCodexSupport();
   stepEnableSshd();
   await stepSshMeshTrust();
   await stepWriteSshConfig();

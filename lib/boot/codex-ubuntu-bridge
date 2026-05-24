@@ -1,0 +1,11 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Keep an Ubuntu tmux/Codex entrypoint alive through a Termux tmux bridge.
+exec proot-distro login ubuntu -- /usr/bin/bash -lc 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; mkdir -p /root/.local/bin; cat > /root/.local/bin/codex-shared-home <<"INNER"
+#!/usr/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+cd /data/data/com.termux/files/home
+exec codex
+INNER
+chmod +x /root/.local/bin/codex-shared-home
+apt install -y tmux >/dev/null 2>&1 || true
+exec tmux new-session -A -s codex-ubuntu /root/.local/bin/codex-shared-home'
