@@ -22,8 +22,12 @@ const STATE_DIR = path.join(os.homedir(), '.forest-registry');
 const STATE_FILE = path.join(STATE_DIR, 'nodes.json');
 // 8773 since 0.2.0. 8771 belongs to Miadi phone-capture on Eury (Gerico1007/termux-init#3).
 const PORT = Number(process.env.FOREST_REGISTRY_PORT || 8773);
+const FOREST_TAILNET = process.env.FOREST_TAILNET || 'ferret-harmonic';
 // Default known forest Termux nodes for the seed subcommand.
-const KNOWN_TERMUX_NODES = ['larix', 'ilex', 'tilia', 'abies'];
+// Override with FOREST_SEED_NODES=comma,separated,list
+const KNOWN_TERMUX_NODES = process.env.FOREST_SEED_NODES
+  ? process.env.FOREST_SEED_NODES.split(',').map(s => s.trim()).filter(Boolean)
+  : ['larix', 'ilex', 'tilia', 'abies'];
 
 // ── Persistence ────────────────────────────────────────────────────
 function ensureStateDir() {
@@ -203,14 +207,14 @@ function cmdSeed() {
     try {
       // Ensure remote has a key, then pull pubkey.
       execSync(
-        `ssh -p 8022 -o ConnectTimeout=8 -o BatchMode=yes ${node}.ferret-harmonic.ts.net ` +
+        `ssh -p 8022 -o ConnectTimeout=8 -o BatchMode=yes ${node}.${FOREST_TAILNET}.ts.net ` +
         `'[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C ${node}@termux-init >/dev/null'`,
         { stdio: 'pipe' }
       );
       // Quote the remote command so ~/ doesn't get expanded by Eury's local shell
       // before being sent over the wire (would resolve to /home/gmusic/.ssh/...).
       const pub = execSync(
-        `ssh -p 8022 -o ConnectTimeout=8 -o BatchMode=yes ${node}.ferret-harmonic.ts.net 'cat "$HOME/.ssh/id_ed25519.pub"'`,
+        `ssh -p 8022 -o ConnectTimeout=8 -o BatchMode=yes ${node}.${FOREST_TAILNET}.ts.net 'cat "$HOME/.ssh/id_ed25519.pub"'`,
         { encoding: 'utf8' }
       ).trim();
       const ip = execSync(`tailscale ip -4 ${node} 2>/dev/null || echo`, { encoding: 'utf8' }).trim();

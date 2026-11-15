@@ -18,8 +18,13 @@ const PKG_ROOT = path.resolve(__dirname, '..');
 const HOME = os.homedir();
 const TIER1 = require(path.join(PKG_ROOT, 'lib/tiers/tier1-core.json'));
 const TIER3 = require(path.join(PKG_ROOT, 'lib/tiers/tier3-power.json'));
+// Registry URL — set FOREST_REGISTRY_URL in ~/.env or the environment.
+// The fallback constructs a URL from FOREST_TAILNET (default: your tailnet name)
+// and FOREST_REGISTRY_HOST (default: the hub hostname).
+const FOREST_TAILNET = process.env.FOREST_TAILNET || 'ferret-harmonic';
+const FOREST_REGISTRY_HOST = process.env.FOREST_REGISTRY_HOST || 'eury';
 const REGISTRY_URL = process.env.FOREST_REGISTRY_URL
-  || 'http://eury.ferret-harmonic.ts.net:8773';
+  || `http://${FOREST_REGISTRY_HOST}.${FOREST_TAILNET}.ts.net:8773`;
 const RETRY_DELAYS_MS = [2000, 8000, 20000]; // 3 attempts, exponential
 
 // ── Logging ────────────────────────────────────────────────────────
@@ -509,7 +514,7 @@ async function stepWriteSshConfig() {
     .filter((n) => n.ssh_port != null)  // skip iOS / unknown — they have no sshd
     .map((n) => {
       // Use Tailscale magic DNS as HostName so it survives IP changes.
-      const fqdn = `${n.hostname}.ferret-harmonic.ts.net`;
+      const fqdn = `${n.hostname}.${FOREST_TAILNET}.ts.net`;
       return [
         `Host ${n.hostname}`,
         `    HostName ${fqdn}`,

@@ -87,11 +87,11 @@ Critical: without this, the device drops off the mesh after every reboot.
 
 **On the device (termux-init):**
 1. `ssh-keygen -t ed25519 -N ''` if `~/.ssh/id_ed25519` is missing
-2. `GET http://eury.ferret-harmonic.ts.net:8773/keys` — fetch the authorized bundle
+2. `GET $FOREST_REGISTRY_URL/keys` — fetch the authorized bundle
    - **Retry**: exponential backoff, 3 attempts over ~30s (delays 2s, 8s, 20s)
    - **On final failure**: skip mesh-trust step with clear error + manual fallback snippet (Jerry pastes the keys by hand). Bootstrap continues so the device is still usable.
 3. Append fetched keys to `~/.ssh/authorized_keys` (dedupe by full key string)
-4. `POST http://eury:8773/register` with `{hostname, pubkey, tailscale_ip}` to register self
+4. `POST $FOREST_REGISTRY_URL/register` with `{hostname, pubkey, tailscale_ip}` to register self
 5. Enable `sshd` via `sv-enable sshd` (runit-managed via termux-services)
 
 Note: transport is plain HTTP because Tailscale already provides E2E encryption across the tailnet, and the registry binds **only** to the Tailscale interface (not 0.0.0.0). HTTPS can be added in a later version if defense-in-depth is desired.
@@ -101,7 +101,7 @@ Note: transport is plain HTTP because Tailscale already provides E2E encryption 
    ```json
    {
      "nodes": [
-       { "hostname": "larix", "pubkey": "ssh-ed25519 …", "ip": "100.124.130.110", "registered_at": "2026-05-17T…" }
+       { "hostname": "<node>", "pubkey": "ssh-ed25519 …", "ip": "<tailscale-ip>", "registered_at": "2026-05-17T…" }
      ]
    }
    ```
@@ -112,7 +112,7 @@ Note: transport is plain HTTP because Tailscale already provides E2E encryption 
 
 ## Registry seeding
 
-First-time setup: `forest-registry seed` SSHs into each known Termux node (larix, ilex, tilia, abies), reads its `~/.ssh/id_ed25519.pub` (generating if missing), and registers it. Bootstraps the bundle so subsequent `termux-init` runs on new devices get the full forest.
+First-time setup: `forest-registry seed` SSHs into each known Termux node, reads its `~/.ssh/id_ed25519.pub` (generating if missing), and registers it. Bootstraps the bundle so subsequent `termux-init` runs on new devices get the full forest.
 
 Eury's own pubkey is also seeded (so Termux devices trust Eury).
 
@@ -133,14 +133,14 @@ Eury's own pubkey is also seeded (so Termux devices trust Eury).
 ## Failure modes & user feedback
 
 - Not running on Termux → abort early with clear message
-- No Tailscale connectivity to eury → abort, print "ensure Tailscale Always-On is enabled and you're signed in to ferret-harmonic.ts.net"
+- No Tailscale connectivity to registry host → abort, print "ensure Tailscale Always-On is enabled and you're signed in to your tailnet"
 - Registry unreachable after retries → abort SSH step (continue rest), print manual fallback snippet with the known forest pubkeys (cached in package)
 - `pkg install` failure → abort with the failing package name + suggested troubleshooting
 - Termux:Boot app not installed → print warning but don't fail (boot script still gets written; will activate when user installs the app)
 
 ## Scope cuts (explicit)
 
-- ❌ iOS nodes (iroko, ginkgo, itea) — no sshd; one-way connections only
+- ❌ iOS nodes — no sshd; one-way connections only
 - ❌ Tailscale install/config — relies on Android app
 - ❌ Key rotation tooling — manual for now
 - ❌ kiro-cli (~500MB binaries) — separate concern
@@ -153,7 +153,7 @@ The package contains **no secrets**. All sensitive data (SSH private keys, OAuth
 
 | Layer | What it protects | Who controls it |
 |-------|------------------|------------------|
-| **Tailscale tailnet** (`ferret-harmonic.ts.net`) | The registry endpoint + all node SSH access — none of these are reachable from public internet | Jerry, via Tailscale admin console (approves devices) |
+| **Tailscale tailnet** | The registry endpoint + all node SSH access — none of these are reachable from public internet | Tailnet admin, via Tailscale admin console (approves devices) |
 | **SSH `authorized_keys`** on each node | Inbound SSH; the bundle from `forest-registry /keys` populates this | Each device's local file; populated via mesh-trust step |
 | **OAuth refresh token lifetime** | If the credentials are exfiltrated, they auto-expire (~weeks) | Anthropic-side |
 

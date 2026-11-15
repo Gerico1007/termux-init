@@ -13,7 +13,7 @@
    - **Termux:Widget** (`com.termux.widget`) — for home-screen `.shortcuts/` launchers
    - **Termux:Window** (`com.termux.window`)
    - **Termux:Tasker** (`com.termux.tasker`)
-3. Install **Tailscale** (F-Droid or Play Store) and sign in to the `ferret-harmonic.ts.net` tailnet
+3. Install **Tailscale** (F-Droid or Play Store) and sign in to your tailnet
 4. Launch Termux:Boot once after install (so its boot receiver is registered with Android)
 5. Inside Termux:
 
@@ -65,6 +65,10 @@ Upgrading from 0.1.x:
 
 - **Eury:** download the 0.2.0 tarball, `npm install -g ./gerico1007-termux-init-0.2.0.tgz`, then `systemctl --user restart forest-registry`. Check with `curl http://eury.ferret-harmonic.ts.net:8773/status`.
 - **A Termux node:** download and install the 0.2.0 tarball the same way, then copy the new shell file over the old one: `cp "$(npm root -g)/@gerico1007/termux-init/lib/shell/00-core.sh" ~/.bashrc.d/00-core.sh`. Open a new shell and run `forest-status`. Re-running `termux-init --skip-pkg --skip-npm` also does this, but it rewrites `~/.termux/boot/01-tailnet-ready.sh` too and re-registers the node.
+
+## Forest mesh
+
+The mesh is a set of devices (Linux, Android/Termux, iOS) connected via a private Tailscale tailnet. Each node registers its SSH pubkey with the registry and receives the full trust bundle. Run `forest-status` on any node to see the live roster, or query `GET /status` on the registry.
 
 ## Forest of Gerico — current mesh
 

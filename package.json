@@ -10,7 +10,8 @@
   },
   "bin": {
     "termux-init": "bin/termux-init.js",
-    "forest-registry": "bin/forest-registry.js"
+    "forest-registry": "bin/forest-registry.js",
+    "forest-registry-setup": "bin/forest-registry-setup.sh"
   },
   "files": [
     "bin/",

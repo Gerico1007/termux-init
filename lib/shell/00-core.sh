@@ -30,7 +30,9 @@ alias claude="TMPDIR=\"$HOME/tmp\" claude --dangerously-skip-permissions"
 # sshd) are labeled accordingly. Falls back to a hardcoded roster if the
 # registry is unreachable.
 forest-status() {
-  local registry="${FOREST_REGISTRY_URL:-http://eury.ferret-harmonic.ts.net:8773}"
+  local tailnet="${FOREST_TAILNET:-ferret-harmonic}"
+  local reg_host="${FOREST_REGISTRY_HOST:-eury}"
+  local registry="${FOREST_REGISTRY_URL:-http://${reg_host}.${tailnet}.ts.net:8773}"
   local nodes_json
   if command -v jq >/dev/null 2>&1 \
       && nodes_json=$(curl -sf --max-time 3 "$registry/nodes" 2>/dev/null); then
@@ -116,7 +118,7 @@ SSHEOF
 eury() {
   if [ -z "${_host:-}" ] || [ -z "${_port:-}" ]; then
     echo "⚠ Eury ngrok-fallback not configured. Run 'eury-config' first."
-    echo "  (Tailscale primary path: ssh gmusic@eury.ferret-harmonic.ts.net)"
+    echo "  (Tailscale primary path: ssh gmusic@${FOREST_REGISTRY_HOST:-eury}.${FOREST_TAILNET:-ferret-harmonic}.ts.net)"
     return 1
   fi
   if ! getent hosts "$_host" >/dev/null 2>&1; then
