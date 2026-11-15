@@ -19,8 +19,8 @@
 
 ```bash
 pkg install -y nodejs
-curl -LO https://github.com/Gerico1007/termux-init/releases/download/v0.3.0/gerico1007-termux-init-0.3.0.tgz
-npm install -g ./gerico1007-termux-init-0.3.0.tgz
+curl -LO https://github.com/Gerico1007/termux-init/releases/download/v0.3.1/gerico1007-termux-init-0.3.1.tgz
+npm install -g ./gerico1007-termux-init-0.3.1.tgz
 termux-init
 ```
 

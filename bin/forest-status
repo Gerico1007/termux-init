@@ -7,9 +7,14 @@
 #
 # A command on PATH since 0.3.0, so it works whatever owns ~/.bashrc
 # (Gerico1007/termux-init#4). FOREST_REGISTRY_URL in the environment or in
-# ~/.env overrides the registry address.
+# ~/.env overrides the registry address. Only that one line of ~/.env is read:
+# the file is never sourced, because on the phones it holds other tools'
+# secrets and lines that are not shell.
 
-[ -z "${FOREST_REGISTRY_URL:-}" ] && [ -f "$HOME/.env" ] && set -a && . "$HOME/.env" && set +a
+if [ -z "${FOREST_REGISTRY_URL:-}" ] && [ -r "$HOME/.env" ]; then
+  FOREST_REGISTRY_URL=$(grep -E '^[[:space:]]*(export[[:space:]]+)?FOREST_REGISTRY_URL=' "$HOME/.env" \
+    | tail -n 1 | cut -d= -f2- | tr -d "\"'\r" | sed 's/[[:space:]]*$//')
+fi
 registry="${FOREST_REGISTRY_URL:-http://eury.ferret-harmonic.ts.net:8773}"
 
 if command -v jq >/dev/null 2>&1 \
