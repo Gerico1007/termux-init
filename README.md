@@ -28,14 +28,20 @@ That's it. The bootstrap is idempotent — safe to re-run.
 
 The package is released on GitHub, not on npm. Each [release](https://github.com/Gerico1007/termux-init/releases) carries the `npm pack` tarball; install the newest one. Download it first and install the file: npm 12 refuses to install from a URL by default (`allow-remote = none`) and accepts a local file (`allow-file = all`).
 
+To activate portal persistence on devices that already have `~/web/pixel-recorder.js` present:
+
+```bash
+termux-init --restore-portals-on-boot
+```
+
 ## What it does
 
 | Tier | Contents |
 |------|----------|
-| **Tier 1 — Core** | openssh, tmux, git, gh, curl, jq, fzf, ripgrep, nodejs, npm, python, termux-api/services/tools, @anthropic-ai/claude-code, the canonical `~/.bashrc.d/00-core.sh`, `~/.termux/boot/01-tailnet-ready.sh` (wakelock + sshd autostart), SSH key generation, mesh trust join |
+| **Tier 1 — Core** | openssh, tmux, git, gh, curl, jq, fzf, ripgrep, nodejs, npm, python, termux-api/services/tools, @anthropic-ai/claude-code, the canonical `~/.bashrc.d/00-core.sh`, `~/.termux/boot/01-tailnet-ready.sh` (wakelock + sshd autostart, optional portal watchdog/restore), SSH key generation, mesh trust join |
 | **Tier 3 — Power/Media** | ffmpeg, redis, syncthing, ollama, rust + build-essential, timidity++, play-audio |
 
-Out of scope for v1: G.Music Assembly layer (see `@gerico1007/gmusic-assembly`, coming), web portals (see `@gerico1007/gmusic-webportals`, coming).
+Out of scope for v1: G.Music Assembly layer (see `@gerico1007/gmusic-assembly`, coming). Note: `termux-init` can optionally keep an already-present Pixel Recorder + Clipboard Gallery portal stack alive, but it does not install the portal app itself.
 
 ## Architecture
 

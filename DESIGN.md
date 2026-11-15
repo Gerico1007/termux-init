@@ -76,10 +76,13 @@ Explicitly NOT in 00-core.sh (belong to future packages):
 
 ## Termux:Boot script — `~/.termux/boot/01-tailnet-ready.sh`
 
-Lifted verbatim from Larix. Runs at every Android boot (when Termux:Boot app is installed):
+Lifted verbatim from Larix and extended for optional portal persistence. Runs at every Android boot (when Termux:Boot app is installed):
 1. Acquire wakelock (`termux-wake-lock`) — without this Android freezes Termux processes
 2. Start sshd on :8022 if not already running
-3. Log Tailscale backend state
+3. Launch `sshd-keeper` when enabled
+4. Launch `portal-keeper` when enabled (keeps Pixel Recorder + Clipboard Gallery alive)
+5. Optionally recreate standard tmux sessions (`codex-termux`, `codex-ubuntu-bridge`, `portals`)
+6. Log Tailscale backend state
 
 Critical: without this, the device drops off the mesh after every reboot.
 
@@ -144,7 +147,8 @@ Eury's own pubkey is also seeded (so Termux devices trust Eury).
 - ❌ Tailscale install/config — relies on Android app
 - ❌ Key rotation tooling — manual for now
 - ❌ kiro-cli (~500MB binaries) — separate concern
-- ❌ Web portals — separate package `gmusic-webportals`
+- ❌ Web portals installation — separate package `gmusic-webportals`
+- ✅ Web portal persistence for an already-present `~/web/pixel-recorder.js` launcher
 - ❌ G.Music Assembly layer — separate package `gmusic-assembly`
 
 ## Security model
