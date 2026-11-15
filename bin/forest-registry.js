@@ -20,7 +20,8 @@ catch { console.error('express not installed — run: npm install -g @gerico1007
 
 const STATE_DIR = path.join(os.homedir(), '.forest-registry');
 const STATE_FILE = path.join(STATE_DIR, 'nodes.json');
-const PORT = Number(process.env.FOREST_REGISTRY_PORT || 8771);
+// 8773 since 0.2.0. 8771 belongs to Miadi phone-capture on Eury (Gerico1007/termux-init#3).
+const PORT = Number(process.env.FOREST_REGISTRY_PORT || 8773);
 // Default known forest Termux nodes for the seed subcommand.
 const KNOWN_TERMUX_NODES = ['larix', 'ilex', 'tilia', 'abies'];
 
@@ -252,7 +253,7 @@ Usage:
   forest-registry status     Print registered nodes
 
 Env:
-  FOREST_REGISTRY_PORT       Override port (default: 8771)
+  FOREST_REGISTRY_PORT       Override port (default: 8773)
 `);
     break;
   default:

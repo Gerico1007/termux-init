@@ -30,7 +30,7 @@ alias claude="TMPDIR=\"$HOME/tmp\" claude --dangerously-skip-permissions"
 # sshd) are labeled accordingly. Falls back to a hardcoded roster if the
 # registry is unreachable.
 forest-status() {
-  local registry="${FOREST_REGISTRY_URL:-http://eury.ferret-harmonic.ts.net:8771}"
+  local registry="${FOREST_REGISTRY_URL:-http://eury.ferret-harmonic.ts.net:8773}"
   local nodes_json
   if command -v jq >/dev/null 2>&1 \
       && nodes_json=$(curl -sf --max-time 3 "$registry/nodes" 2>/dev/null); then

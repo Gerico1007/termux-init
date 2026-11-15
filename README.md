@@ -19,11 +19,13 @@
 
 ```bash
 pkg install -y nodejs
-npm install -g @gerico1007/termux-init
+npm install -g https://github.com/Gerico1007/termux-init/releases/download/v0.2.0/gerico1007-termux-init-0.2.0.tgz
 termux-init
 ```
 
 That's it. The bootstrap is idempotent — safe to re-run.
+
+The package is released on GitHub, not on npm. Each [release](https://github.com/Gerico1007/termux-init/releases) carries the `npm pack` tarball; install the newest one.
 
 ## What it does
 
@@ -46,13 +48,22 @@ Bootstraps the device. Detects Termux, installs tier packages, writes shell + bo
 
 ### `forest-registry` — runs on Eury (systemd user service)
 
-Tailnet-only HTTP service on port 8771 (Tailscale provides E2E encryption already; HTTP keeps bootstrap cert-free). Owns the pubkey bundle for every Termux node in the forest. Binds explicitly to the Tailscale interface.
+Tailnet-only HTTP service on port 8773 (Tailscale provides E2E encryption already; HTTP keeps bootstrap cert-free). Owns the pubkey bundle for every Termux node in the forest. Binds to the Tailscale address, or to `127.0.0.1` when Tailscale has no address yet at start.
 
 ```
 GET  /keys      → concatenated authorized_keys bundle
 POST /register  → {hostname, pubkey, ip} → joins mesh
 GET  /status    → JSON list of registered nodes
 ```
+
+### Registry port: 8773 since 0.2.0
+
+Up to 0.1.5 the registry used 8771. On Eury, Miadi's phone-capture also uses 8771, and whichever service started first took it. 8771 stays with Miadi, so from 0.2.0 the registry and every client default use 8773 ([Gerico1007/termux-init#3](https://github.com/Gerico1007/termux-init/issues/3)). `FOREST_REGISTRY_PORT` on Eury and `FOREST_REGISTRY_URL` on a node still override it.
+
+Upgrading from 0.1.x:
+
+- **Eury:** install the 0.2.0 tarball with `npm install -g <url>`, then `systemctl --user restart forest-registry`. Check with `curl http://eury.ferret-harmonic.ts.net:8773/status`.
+- **A Termux node:** install the 0.2.0 tarball, then copy the new shell file over the old one: `cp "$(npm root -g)/@gerico1007/termux-init/lib/shell/00-core.sh" ~/.bashrc.d/00-core.sh`. Open a new shell and run `forest-status`. Re-running `termux-init --skip-pkg --skip-npm` also does this, but it rewrites `~/.termux/boot/01-tailnet-ready.sh` too and re-registers the node.
 
 ## Forest of Gerico — current mesh
 
@@ -63,9 +74,9 @@ GET  /status    → JSON list of registered nodes
 | Ginkgo | iPad Pro | 100.78.108.48 | iOS |
 | Itea | iOS node | 100.124.206.58 | iOS |
 | Larix | Android capture (Termux) | 100.124.130.110 | Android |
-| Ilex | Android capture (Termux) | 100.119.147.78 | Android |
+| Ilex | Sold to William (no longer a forest node) | 100.119.147.78 | Android |
 | Tilia | Samsung Android (Termux) | 100.101.211.92 | Android |
-| Abies | Android capture (Termux) | 100.73.226.72 | Android |
+| Abies | Lost (no longer a forest node) | 100.73.226.72 | Android |
 
 ## License
 

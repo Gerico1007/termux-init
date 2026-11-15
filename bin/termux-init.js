@@ -19,7 +19,7 @@ const HOME = os.homedir();
 const TIER1 = require(path.join(PKG_ROOT, 'lib/tiers/tier1-core.json'));
 const TIER3 = require(path.join(PKG_ROOT, 'lib/tiers/tier3-power.json'));
 const REGISTRY_URL = process.env.FOREST_REGISTRY_URL
-  || 'http://eury.ferret-harmonic.ts.net:8771';
+  || 'http://eury.ferret-harmonic.ts.net:8773';
 const RETRY_DELAYS_MS = [2000, 8000, 20000]; // 3 attempts, exponential
 
 // ── Logging ────────────────────────────────────────────────────────

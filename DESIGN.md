@@ -87,11 +87,11 @@ Critical: without this, the device drops off the mesh after every reboot.
 
 **On the device (termux-init):**
 1. `ssh-keygen -t ed25519 -N ''` if `~/.ssh/id_ed25519` is missing
-2. `GET http://eury.ferret-harmonic.ts.net:8771/keys` — fetch the authorized bundle
+2. `GET http://eury.ferret-harmonic.ts.net:8773/keys` — fetch the authorized bundle
    - **Retry**: exponential backoff, 3 attempts over ~30s (delays 2s, 8s, 20s)
    - **On final failure**: skip mesh-trust step with clear error + manual fallback snippet (Jerry pastes the keys by hand). Bootstrap continues so the device is still usable.
 3. Append fetched keys to `~/.ssh/authorized_keys` (dedupe by full key string)
-4. `POST http://eury:8771/register` with `{hostname, pubkey, tailscale_ip}` to register self
+4. `POST http://eury:8773/register` with `{hostname, pubkey, tailscale_ip}` to register self
 5. Enable `sshd` via `sv-enable sshd` (runit-managed via termux-services)
 
 Note: transport is plain HTTP because Tailscale already provides E2E encryption across the tailnet, and the registry binds **only** to the Tailscale interface (not 0.0.0.0). HTTPS can be added in a later version if defense-in-depth is desired.
