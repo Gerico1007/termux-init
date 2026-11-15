@@ -6,8 +6,9 @@
 #   1. Acquires a wakelock so Termux stays alive
 #   2. Ensures sshd on :8022 is running
 #   3. Launches sshd-keeper watchdog in tmux
-#   4. Optionally restores Codex tmux sessions
-#   5. Logs everything to ~/.termux/boot/boot.log
+#   4. Optionally launches portal-keeper to keep Pixel Recorder + Clipboard Gallery alive
+#   5. Optionally restores Codex/portal tmux sessions
+#   6. Logs everything to ~/.termux/boot/boot.log
 #
 # Requires: Termux:Boot app from F-Droid, launched once after install.
 
@@ -22,8 +23,10 @@ if [ -f "$CONFIG" ]; then
   . "$CONFIG"
 fi
 ENABLE_SSHD_KEEPER="${ENABLE_SSHD_KEEPER:-1}"
+ENABLE_PORTAL_KEEPER="${ENABLE_PORTAL_KEEPER:-0}"
 RESTORE_CODEX_TERMUX="${RESTORE_CODEX_TERMUX:-0}"
 RESTORE_CODEX_UBUNTU_BRIDGE="${RESTORE_CODEX_UBUNTU_BRIDGE:-0}"
+RESTORE_PORTALS="${RESTORE_PORTALS:-0}"
 
 echo "$(ts) ━━━ boot script start ━━━" >> "$LOG"
 
@@ -65,6 +68,21 @@ if [ "$ENABLE_SSHD_KEEPER" = "1" ] && [ -x "$HOME/.local/bin/sshd-keeper.sh" ]; 
   fi
 fi
 
+if [ "$ENABLE_PORTAL_KEEPER" = "1" ] && [ -x "$HOME/.local/bin/portal-keeper.sh" ]; then
+  if pgrep -af "[p]ortal-keeper.sh" >/dev/null 2>&1; then
+    echo "$(ts) ✅ portal-keeper already running" >> "$LOG"
+  else
+    tmux kill-session -t portal-keeper >/dev/null 2>&1 || true
+    tmux new-session -d -s portal-keeper "$HOME/.local/bin/portal-keeper.sh"
+    sleep 1
+    if pgrep -af "[p]ortal-keeper.sh" >/dev/null 2>&1; then
+      echo "$(ts) ✅ portal-keeper launched" >> "$LOG"
+    else
+      echo "$(ts) ❌ portal-keeper failed to launch" >> "$LOG"
+    fi
+  fi
+fi
+
 restore_tmux_session() {
   name="$1"
   cmd="$2"
@@ -81,12 +99,34 @@ restore_tmux_session() {
   fi
 }
 
+restore_portals_session() {
+  if tmux has-session -t portals 2>/dev/null; then
+    echo "$(ts) ✅ tmux session portals already exists" >> "$LOG"
+  else
+    "$HOME/.local/bin/portal-hosted" >> "$LOG" 2>&1
+    sleep 3
+    if tmux has-session -t portals 2>/dev/null; then
+      echo "$(ts) ✅ tmux session portals restored via full fixed-workspace launcher" >> "$LOG"
+    else
+      echo "$(ts) ❌ tmux session portals failed to restore via full fixed-workspace launcher" >> "$LOG"
+    fi
+  fi
+}
+
 if [ "$RESTORE_CODEX_TERMUX" = "1" ] && [ -x "$HOME/.local/bin/codex-termux-hosted" ]; then
   restore_tmux_session codex-termux "$HOME/.local/bin/codex-termux-hosted"
 fi
 
 if [ "$RESTORE_CODEX_UBUNTU_BRIDGE" = "1" ] && [ -x "$HOME/.local/bin/codex-ubuntu-bridge" ]; then
   restore_tmux_session codex-ubuntu-bridge "$HOME/.local/bin/codex-ubuntu-bridge"
+fi
+
+if [ "$RESTORE_PORTALS" = "1" ] && [ -x "$HOME/.local/bin/portal-hosted" ]; then
+  if [ "$ENABLE_PORTAL_KEEPER" = "1" ]; then
+    echo "$(ts) ℹ️ portal restore delegated to portal-keeper" >> "$LOG"
+  else
+    restore_portals_session
+  fi
 fi
 
 if command -v tailscale >/dev/null 2>&1; then

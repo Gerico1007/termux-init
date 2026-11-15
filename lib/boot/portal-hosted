@@ -1,0 +1,27 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Forest of Gerico — launch the full fixed-workspace portals profile.
+
+set -u
+
+PORTALS_SCRIPT="$HOME/.shortcuts/web-portals.sh"
+PROFILE="${PORTALS_PROFILE:-full}"
+AUREON_WORKSPACE="${PORTALS_AUREON_WORKSPACE:-aureon}"
+NYRO_WORKSPACE="${PORTALS_NYRO_WORKSPACE:-nyro}"
+JAMAI_WORKSPACE="${PORTALS_JAMAI_WORKSPACE:-jamai}"
+SYNTH_WORKSPACE="${PORTALS_SYNTH_WORKSPACE:-synth}"
+EPISODES_WORKSPACE="${PORTALS_EPISODES_WORKSPACE:-episodes}"
+
+if [ ! -x "$PORTALS_SCRIPT" ]; then
+  echo "portal-hosted: missing launcher $PORTALS_SCRIPT" >&2
+  exit 1
+fi
+
+export PORTALS_NO_ATTACH=1
+export PORTALS_PROFILE="$PROFILE"
+export PORTALS_WORKSPACE="$AUREON_WORKSPACE"
+export PORTALS_NYRO_WORKSPACE="$NYRO_WORKSPACE"
+export PORTALS_JAMAI_WORKSPACE="$JAMAI_WORKSPACE"
+export PORTALS_SYNTH_WORKSPACE="$SYNTH_WORKSPACE"
+export PORTALS_EPISODES_WORKSPACE="$EPISODES_WORKSPACE"
+
+exec "$PORTALS_SCRIPT"

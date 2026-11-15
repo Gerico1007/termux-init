@@ -44,6 +44,7 @@ const flags = {
   noPower:    argv.includes('--no-power'),
   withCodex:  argv.includes('--with-codex'),
   restoreCodexOnBoot: argv.includes('--restore-codex-on-boot'),
+  restorePortalsOnBoot: argv.includes('--restore-portals-on-boot'),
   skipPkg:    argv.includes('--skip-pkg'),
   skipNpm:    argv.includes('--skip-npm'),
   skipSsh:    argv.includes('--skip-ssh'),
@@ -86,6 +87,9 @@ Flags:
   --with-codex                Install Ubuntu/proot Codex support and launchers
   --restore-codex-on-boot    Enable boot-time recreation of codex-termux and
                               codex-ubuntu-bridge tmux sessions
+  --restore-portals-on-boot  Enable boot-time recreation of the portals tmux
+                              session and launch portal-keeper watchdog
+                              for Pixel Recorder + Clipboard Gallery
   --no-power                  Skip Tier 3 (Power/Media) packages
   --skip-pkg                  Skip pkg install steps
   --skip-npm                  Skip npm install steps
@@ -388,6 +392,18 @@ function stepShellAndBoot() {
     0o755,
   );
 
+  overwriteFile(
+    path.join(HOME, '.local/bin/portal-hosted'),
+    path.join(PKG_ROOT, 'lib/boot/portal-hosted'),
+    0o755,
+  );
+
+  overwriteFile(
+    path.join(HOME, '.local/bin/portal-keeper.sh'),
+    path.join(PKG_ROOT, 'lib/boot/portal-keeper.sh'),
+    0o755,
+  );
+
   writeFileIfMissing(
     path.join(HOME, '.config/forest/persistence.env'),
     path.join(PKG_ROOT, 'lib/env/forest-persistence.env.example'),
@@ -407,6 +423,12 @@ function stepShellAndBoot() {
     const envPath = path.join(HOME, '.config/forest/persistence.env');
     ensureEnvVar(envPath, 'RESTORE_CODEX_TERMUX', '1');
     ensureEnvVar(envPath, 'RESTORE_CODEX_UBUNTU_BRIDGE', '1');
+  }
+
+  if (flags.restorePortalsOnBoot) {
+    const envPath = path.join(HOME, '.config/forest/persistence.env');
+    ensureEnvVar(envPath, 'RESTORE_PORTALS', '1');
+    ensureEnvVar(envPath, 'ENABLE_PORTAL_KEEPER', '1');
   }
 }
 

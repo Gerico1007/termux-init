@@ -25,14 +25,20 @@ termux-init
 
 That's it. The bootstrap is idempotent — safe to re-run.
 
+To activate portal persistence on devices that already have `~/web/pixel-recorder.js` present:
+
+```bash
+termux-init --restore-portals-on-boot
+```
+
 ## What it does
 
 | Tier | Contents |
 |------|----------|
-| **Tier 1 — Core** | openssh, tmux, git, gh, curl, jq, fzf, ripgrep, nodejs, npm, python, termux-api/services/tools, @anthropic-ai/claude-code, the canonical `~/.bashrc.d/00-core.sh`, `~/.termux/boot/01-tailnet-ready.sh` (wakelock + sshd autostart), SSH key generation, mesh trust join |
+| **Tier 1 — Core** | openssh, tmux, git, gh, curl, jq, fzf, ripgrep, nodejs, npm, python, termux-api/services/tools, @anthropic-ai/claude-code, the canonical `~/.bashrc.d/00-core.sh`, `~/.termux/boot/01-tailnet-ready.sh` (wakelock + sshd autostart, optional portal watchdog/restore), SSH key generation, mesh trust join |
 | **Tier 3 — Power/Media** | ffmpeg, redis, syncthing, ollama, rust + build-essential, timidity++, play-audio |
 
-Out of scope for v1: G.Music Assembly layer (see `@gerico1007/gmusic-assembly`, coming), web portals (see `@gerico1007/gmusic-webportals`, coming).
+Out of scope for v1: G.Music Assembly layer (see `@gerico1007/gmusic-assembly`, coming). Note: `termux-init` can optionally keep an already-present Pixel Recorder + Clipboard Gallery portal stack alive, but it does not install the portal app itself.
 
 ## Architecture
 
