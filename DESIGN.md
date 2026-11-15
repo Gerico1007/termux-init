@@ -76,10 +76,12 @@ Explicitly NOT in 00-core.sh (belong to future packages):
 
 ## Termux:Boot script — `~/.termux/boot/01-tailnet-ready.sh`
 
-Lifted verbatim from Larix. Runs at every Android boot (when Termux:Boot app is installed):
+Lifted verbatim from Larix and extended for reboot persistence. Runs at every Android boot (when Termux:Boot app is installed):
 1. Acquire wakelock (`termux-wake-lock`) — without this Android freezes Termux processes
 2. Start sshd on :8022 if not already running
-3. Log Tailscale backend state
+3. Launch `sshd-keeper` when enabled
+4. Optionally recreate standard tmux sessions (`codex-termux`, `codex-ubuntu-bridge`)
+5. Log Tailscale backend state
 
 Critical: without this, the device drops off the mesh after every reboot.
 
