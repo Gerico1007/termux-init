@@ -24,41 +24,10 @@ alias claude="TMPDIR=\"$HOME/tmp\" claude --dangerously-skip-permissions"
 # Auto-source ~/.env if it exists (kv pairs become env vars)
 [ -f "$HOME/.env" ] && set -a && . "$HOME/.env" && set +a
 
-# ── Forest of Gerico — mesh status helper ───────────────────────────
-# Asks the forest-registry for the current node roster (including platform +
-# ssh_port), then probes each node with a real SSH handshake. iOS nodes (no
-# sshd) are labeled accordingly. Falls back to a hardcoded roster if the
-# registry is unreachable.
-forest-status() {
-  local registry="${FOREST_REGISTRY_URL:-http://eury.ferret-harmonic.ts.net:8773}"
-  local nodes_json
-  if command -v jq >/dev/null 2>&1 \
-      && nodes_json=$(curl -sf --max-time 3 "$registry/nodes" 2>/dev/null); then
-    echo "$nodes_json" | jq -r '.nodes[] | "\(.hostname)\t\(.platform // "?")\t\(.ssh_port // "-")"' \
-      | while IFS=$'\t' read -r host platform port; do
-        printf "%-10s [%-6s] " "$host" "$platform"
-        if [ "$port" = "-" ] || [ -z "$port" ]; then
-          echo "no sshd"
-        elif ssh -n -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new \
-                "$host" true 2>/dev/null; then
-          # -n above redirects ssh's stdin from /dev/null. Without it ssh would
-          # slurp the rest of the while-read pipe input on its first success,
-          # and the loop would silently exit after the first reachable node.
-          echo "ssh ok"
-        else
-          echo "ssh unreachable"
-        fi
-      done
-  else
-    echo "⚠ registry $registry unreachable; probing fallback roster via SSH config"
-    local fallback="eury larix ilex tilia abies"
-    for n in $fallback; do
-      printf "%-10s          " "$n"
-      ssh -n -o BatchMode=yes -o ConnectTimeout=3 "$n" true 2>/dev/null \
-        && echo "ssh ok" || echo "ssh unreachable"
-    done
-  fi
-}
+# ── Forest of Gerico — mesh status ──────────────────────────────────
+# forest-status is a command since 0.3.0 (bin/forest-status), installed on
+# PATH with the package, so it works whatever owns ~/.bashrc
+# (Gerico1007/termux-init#4).
 
 # ── Eury connection — ngrok backup (Tailscale primary) ──────────────
 # Use only when Tailscale is unreachable. eury-config asks for ngrok number + port,

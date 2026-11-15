@@ -28,7 +28,18 @@ One npm command brings a fresh Termux device from zero to **fully integrated For
 | **2 — G.Music Assembly** | Deferred to future package | — | gmusic-assembly npm, EchoThreads clone, gemini-cli |
 | **4 — Web Portals** | Deferred to future package | — | gmtermux clone → becomes `@gerico1007/gmusic-webportals` |
 
-## Tier 1 — Core packages
+## What a default run owns (since 0.3.0)
+
+On the forest phones the home folder is a checkout of `miadisabelle/gmtermux`, which tracks `~/.bashrc` and installs its own packages. A `git pull` there replaces whatever termux-init wrote into `~/.bashrc`, which is how Larix lost the `.bashrc.d` loader on 2026-08-20. So a default run owns only what no other tool does ([Gerico1007/termux-init#4](https://github.com/Gerico1007/termux-init/issues/4)):
+
+- the boot script `~/.termux/boot/01-tailnet-ready.sh` (sshd at phone start)
+- SSH key generation, mesh trust with the forest-registry, `~/.ssh/config` Host blocks
+- the `forest-status` command (a bin, not a shell function)
+- the packages those need, installed only when missing: openssh, termux-services, jq, curl
+
+The tiers below need `--packages`, and the shell pattern needs `--shell`.
+
+## Tier 1 — Core packages (`--packages`)
 
 **Termux pkg (explicit; deps auto-pull):**
 ```
@@ -42,16 +53,16 @@ iproute2 rsync nmap sudo
 **NPM globals:**
 - `@anthropic-ai/claude-code` (Claude Code CLI; alias in 00-core.sh uses it)
 
-## Tier 3 — Power/Media packages
+## Tier 3 — Power/Media packages (`--packages`, unless `--no-power`)
 
 ```
 ffmpeg timidity++ play-audio redis syncthing ollama rust
 rust-std-aarch64-linux-android clang cmake make ninja pkg-config
 ```
 
-## Composable shell config — `~/.bashrc.d/` pattern
+## Composable shell config — `~/.bashrc.d/` pattern (`--shell`)
 
-`termux-init` writes:
+With `--shell`, `termux-init` writes:
 1. `~/.bashrc` — tiny stub that sources `~/.bashrc.d/*.sh` in lexical order
 2. `~/.bashrc.d/00-core.sh` — owned by termux-init, idempotent overwrite
 
@@ -125,7 +136,7 @@ Eury's own pubkey is also seeded (so Termux devices trust Eury).
 |-----------|----------------|
 | `pkg install -y X` | Termux's pkg is naturally idempotent |
 | `npm install -g X` | npm is naturally idempotent |
-| Shell snippet write | Overwrite `~/.bashrc.d/00-core.sh` every run; stub `~/.bashrc` written only if missing or doesn't start with our sentinel comment |
+| Shell snippet write | Only with `--shell`: overwrite `~/.bashrc.d/00-core.sh` every run; stub `~/.bashrc` written only if missing or doesn't start with our sentinel comment |
 | Boot script | Overwrite `~/.termux/boot/01-tailnet-ready.sh`, chmod +x |
 | `.env` | Only write if missing (don't clobber user secrets) |
 | `termux.properties` | Only write if missing (user may have customized) |

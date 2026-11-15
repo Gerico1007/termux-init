@@ -45,6 +45,8 @@ const flags = {
   withCodex:  argv.includes('--with-codex'),
   restoreCodexOnBoot: argv.includes('--restore-codex-on-boot'),
   restorePortalsOnBoot: argv.includes('--restore-portals-on-boot'),
+  packages:   argv.includes('--packages'),
+  shell:      argv.includes('--shell'),
   skipPkg:    argv.includes('--skip-pkg'),
   skipNpm:    argv.includes('--skip-npm'),
   skipSsh:    argv.includes('--skip-ssh'),
@@ -90,9 +92,16 @@ Flags:
   --restore-portals-on-boot  Enable boot-time recreation of the portals tmux
                               session and launch portal-keeper watchdog
                               for Pixel Recorder + Clipboard Gallery
-  --no-power                  Skip Tier 3 (Power/Media) packages
-  --skip-pkg                  Skip pkg install steps
-  --skip-npm                  Skip npm install steps
+  --packages                  Also install the full Tier 1 (+ Tier 3) package
+                              lists and npm globals. Without it, only what
+                              boot + SSH trust need is installed when missing
+                              (openssh, termux-services, jq, curl).
+  --shell                     Also write ~/.bashrc.d/00-core.sh and the
+                              ~/.bashrc stub. Leave off on a phone whose
+                              ~/.bashrc belongs to gmtermux.
+  --no-power                  Skip Tier 3 (Power/Media) packages (--packages)
+  --skip-pkg                  Skip every pkg install, even the minimal one
+  --skip-npm                  Skip npm install steps (--packages)
   --skip-ssh                  Skip SSH key generation + mesh registration
   --skip-ssh-config           Skip writing ~/.ssh/config Host blocks
   --dry-run                   Print what would happen without making changes
@@ -281,8 +290,33 @@ function stepDetectTermux() {
   log.ok(`Termux detected ($PREFIX=${process.env.PREFIX})`);
 }
 
+// What boot + SSH trust need, as command → Termux package. Installed when
+// missing on a default run; the full tiers need --packages
+// (Gerico1007/termux-init#4).
+const NEEDS = [
+  ['ssh-keygen', 'openssh'],
+  ['sshd', 'openssh'],
+  ['sv-enable', 'termux-services'],
+  ['jq', 'jq'],
+  ['curl', 'curl'],
+];
+
+function hasCommand(name) {
+  return spawnSync('sh', ['-c', `command -v ${name}`], { stdio: 'ignore' }).status === 0;
+}
+
+function stepEnsureNeeds() {
+  if (flags.skipPkg) { log.step('Skipping pkg install (--skip-pkg)'); return; }
+  log.step('Checking what boot + SSH trust need');
+  const missing = [...new Set(NEEDS.filter(([cmd]) => !hasCommand(cmd)).map(([, pkg]) => pkg))];
+  if (missing.length === 0) { log.ok('openssh, termux-services, jq, curl present'); return; }
+  run(`pkg install -y ${missing.join(' ')}`);
+  log.ok(`installed: ${missing.join(', ')}`);
+}
+
 function stepPkgInstall() {
   if (flags.skipPkg) { log.step('Skipping pkg install (--skip-pkg)'); return { tier1: 'skipped', tier3: 'skipped' }; }
+  if (!flags.packages) { stepEnsureNeeds(); return { tier1: 'skipped', tier3: 'skipped' }; }
 
   log.step('Refreshing + upgrading Termux pkg index');
   // pkg update is the index refresh — fatal if it fails (no network or repo broken).
@@ -327,6 +361,7 @@ function stepPkgInstall() {
 
 function stepNpmInstall() {
   if (flags.skipNpm) { log.step('Skipping npm install (--skip-npm)'); return; }
+  if (!flags.packages) { log.step('Skipping npm globals (add --packages to install them)'); return; }
   log.step('Installing npm globals');
   for (const spec of TIER1.npmGlobal) {
     // Strip @version to get the bare package name for uninstall.
@@ -355,18 +390,20 @@ function stepNpmInstall() {
 // we pin to 2.1.37 in tier1-core.json rather than chase a workaround.
 
 function stepShellAndBoot() {
-  log.step('Writing shell + boot config');
-  ensureDir(path.join(HOME, '.bashrc.d'));
+  log.step(flags.shell ? 'Writing shell + boot config' : 'Writing boot config (~/.bashrc left alone; add --shell to write it)');
   ensureDir(path.join(HOME, '.termux/boot'));
   ensureDir(path.join(HOME, '.config/forest'));
   ensureDir(path.join(HOME, '.local/bin'));
   ensureDir(path.join(HOME, 'tmp'));
 
-  overwriteFile(
-    path.join(HOME, '.bashrc.d/00-core.sh'),
-    path.join(PKG_ROOT, 'lib/shell/00-core.sh'),
-  );
-  ensureBashrcStub();
+  if (flags.shell) {
+    ensureDir(path.join(HOME, '.bashrc.d'));
+    overwriteFile(
+      path.join(HOME, '.bashrc.d/00-core.sh'),
+      path.join(PKG_ROOT, 'lib/shell/00-core.sh'),
+    );
+    ensureBashrcStub();
+  }
 
   overwriteFile(
     path.join(HOME, '.termux/boot/01-tailnet-ready.sh'),
@@ -730,7 +767,7 @@ function stepSummary() {
   Next steps on this device:
     1. Launch Termux:Boot once  — opens the app so its boot receiver activates
     2. ${`\x1b[36m`}claude login${`\x1b[0m`}              — authenticate Claude Code CLI
-    3. ${`\x1b[36m`}source ~/.bashrc${`\x1b[0m`}          — pick up the new shell config (or reopen Termux)
+    3. ${flags.shell ? `${`\x1b[36m`}source ~/.bashrc${`\x1b[0m`}          — pick up the new shell config (or reopen Termux)` : `~/.bashrc left as it is (gmtermux or your own); add --shell to write it`}
     4. ${`\x1b[36m`}forest-status${`\x1b[0m`}             — verify mesh connectivity to every Forest node
 ${codexLines}
 

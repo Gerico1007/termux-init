@@ -1,7 +1,7 @@
 {
   "name": "@gerico1007/termux-init",
-  "version": "0.2.0",
-  "description": "Bootstrap a Termux device into the Forest of Gerico mesh — installs base + power tools, wires .bashrc, drops boot script, joins the SSH trust ring.",
+  "version": "0.3.0",
+  "description": "Bootstrap a Termux device into the Forest of Gerico mesh — drops the boot script (sshd at phone start) and joins the SSH trust ring; base + power tools and .bashrc are opt-in.",
   "license": "MIT",
   "author": "Jerry (Gerico1007) <mia@jgwill.com>",
   "repository": {
@@ -10,7 +10,8 @@
   },
   "bin": {
     "termux-init": "bin/termux-init.js",
-    "forest-registry": "bin/forest-registry.js"
+    "forest-registry": "bin/forest-registry.js",
+    "forest-status": "bin/forest-status"
   },
   "files": [
     "bin/",
