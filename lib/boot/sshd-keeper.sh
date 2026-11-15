@@ -14,11 +14,13 @@ while true; do
   if ! pgrep -x sshd >/dev/null 2>&1; then
     echo "$(ts) restarting sshd via sshd-keeper" >> "$LOG"
     if command -v sv >/dev/null 2>&1; then
+      # Let runit own sshd. Do not race it with a plain fallback sshd.
       sv up sshd >/dev/null 2>&1 || true
+      sleep 3
+    else
+      sshd >/dev/null 2>&1 || true
       sleep 2
     fi
-    pgrep -x sshd >/dev/null 2>&1 || sshd >/dev/null 2>&1 || true
-    sleep 2
     if pgrep -x sshd >/dev/null 2>&1; then
       echo "$(ts) sshd-keeper confirmed sshd up" >> "$LOG"
     else
